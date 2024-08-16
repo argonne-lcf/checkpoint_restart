@@ -1,0 +1,44 @@
+Started running job at Thu 15 Aug 2024 11:12:23 PM CDT
+Build a pbs_nodefile nodes nodefile from /var/spool/pbs/aux/732238.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov, which contains 2 nodes
+Total number of nodes checked: 4
+Number of nodes that are selected: 2
+I am 1 of 24: 1 on x4114c4s3b0n0
+I am 2 of 24: 2 on x4114c4s3b0n0
+I am 4 of 24: 4 on x4114c4s3b0n0
+I am 3 of 24: 3 on x4114c4s3b0n0
+I am 5 of 24: 5 on x4114c4s3b0n0
+I am 6 of 24: 6 on x4114c4s3b0n0
+I am 0 of 24: 0 on x4114c4s3b0n0
+I am 7 of 24: 7 on x4114c4s3b0n0
+I am 8 of 24: 8 on x4114c4s3b0n0
+I am 9 of 24: 9 on x4114c4s3b0n0
+I am 10 of 24: 10 on x4114c4s3b0n0
+I am 11 of 24: 11 on x4114c4s3b0n0
+I am 12 of 24: 0 on x4114c4s4b0n0
+I am 18 of 24: 6 on x4114c4s4b0n0
+I am 22 of 24: 10 on x4114c4s4b0n0
+I am 17 of 24: 5 on x4114c4s4b0n0
+I am 16 of 24: 4 on x4114c4s4b0n0
+I am 20 of 24: 8 on x4114c4s4b0n0
+I am 14 of 24: 2 on x4114c4s4b0n0
+I am 15 of 24: 3 on x4114c4s4b0n0
+I am 13 of 24: 1 on x4114c4s4b0n0
+I am 19 of 24: 7 on x4114c4s4b0n0
+I am 23 of 24: 11 on x4114c4s4b0n0
+I am 21 of 24: 9 on x4114c4s4b0n0
+Job started at 2024-08-15 23:12:25.182524
+WARNING: Job will run 101 seconds and fail
+Starting job from scratch
+0 iteration ...
+1 iteration ...
+2 iteration ...
+3 iteration ...
+4 iteration ...
+5 iteration ...
+6 iteration ...
+7 iteration ...
+8 iteration ...
+9 iteration ...
+Job exited with 143 error code, will rerun
+732240.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
+Finished running jobs with  trials at Thu 15 Aug 2024 11:14:13 PM CDT

@@ -1,0 +1,14 @@
+
+The following have been reloaded with a version change:
+  1) intel_compute_runtime/release/821.36 => intel_compute_runtime/release/803.29
+  2) oneapi/eng-compiler/2024.04.15.002 => oneapi/release/2024.1
+
+x4114c2s0b0n0.hostmgmt2114.cm.aurora.alcf.anl.gov: rank 2 exited with code 1
+x4114c2s0b0n0.hostmgmt2114.cm.aurora.alcf.anl.gov: rank 0 died from signal 15
+/flare/Aurora_deployment/AuroraGPT/soft/checkpoint_restart/flush.sh: line 2: UID: readonly variable
+x4114c3s0b0n0.hostmgmt2114.cm.aurora.alcf.anl.gov: Connection to x4114c3s0b0n0.hostmgmt2114.cm.aurora.alcf.anl.gov closed by remote host.
+x4114c2s7b0n0.hostmgmt2114.cm.aurora.alcf.anl.gov: Connection to x4114c2s7b0n0.hostmgmt2114.cm.aurora.alcf.anl.gov closed by remote host.
+clush: x4114c3s0b0n0.hostmgmt2114.cm.aurora.alcf.anl.gov: exited with exit code 255
+clush: x4114c2s7b0n0.hostmgmt2114.cm.aurora.alcf.anl.gov: exited with exit code 255
+x4114c2s1b0n0.hostmgmt2114.cm.aurora.alcf.anl.gov: Connection to x4114c2s1b0n0.hostmgmt2114.cm.aurora.alcf.anl.gov closed by remote host.
+clush: x4114c2s1b0n0.hostmgmt2114.cm.aurora.alcf.anl.gov: exited with exit code 255
