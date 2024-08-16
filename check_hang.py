@@ -36,4 +36,4 @@ while (ct - ti_c < args.timeout):
 if (ct - ti_c >= args.timeout):
     print(f"[{get_date(time.time())}]Output has not been updated for {ct - ti_c} seconds. Killing the job now ...")
 os.system(f"pkill -u $USER {args.command}")
-print(f"[{get_date(time.time())}] Job killed")
+print(f"[{get_date(time.time())}] Job killed after hanging for {args.timeout} seconds.")
