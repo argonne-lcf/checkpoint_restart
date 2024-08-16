@@ -48,4 +48,3 @@ fi
 pkill check_hang.py
 PBS_NODEFILE=nodefile_all flush.sh
 sleep 5
-qsub $0
