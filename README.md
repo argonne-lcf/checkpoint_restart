@@ -4,6 +4,19 @@ We have seen that exascale computing systems suffer a lot of unstability which l
 
 In this github repo, we provide simple program to simulate all kinds of job running issues such as (1) hang; (2) fail in the middle of the run; (3) success. We provide example submission script that can deal with various kind of situations. 
 
+## Simulation of job execution: hang, fail, success
+- test_pyjob.py 
+  A simple simulation program, which can control
+  ```bash
+  --hang N: to hang for N seconds
+  --fail N: to fail the job after N seconds
+  --compute T: compute time per iterations
+  --niters NITERS: total number of iterations
+  --checkpoint CHECKPOINT: path for checkpoint
+  --checkpoint_time T: time for writing one checkpoint
+  ```
+## Useful scripts to compose the submission scripts that are able to handle various job execution statuses. 
+
 - get_healthy_nodes.sh NODEFILE NUM_NODES_TO_SELECT NEW_NODEFILE
   
   This script is to select a subset of healthy nodes from the entire allocation
@@ -17,20 +30,15 @@ In this github repo, we provide simple program to simulate all kinds of job runn
   This is to clean up the nodes (except the headnode, the first one on the list)
 
 
-- test_pyjob.py 
-  A simple simulation program, which can control
-  ```bash
-  --hang N: to hang for N seconds
-  --fail N: to fail the job after N seconds
-  --compute T: compute time per iterations
-  --niters NITERS: total number of iterations
-  --checkpoint CHECKPOINT: path for checkpoint
-  --checkpoint_time T: time for writing one checkpoint
-  ```
+## Example submission scripts
 - qsub_multi_mpiexec.sc
   submission script doing continual trials of mpiexec until success or timeout
 
 - qsub_multi_qsub.sc
   resubmit the job once it fails
   
-  
+## Various simulation examples
+- fail/: job failed after 100 seconds, restart
+- hang/: job hang, kill and restart
+- success/: job run seccessfully
+- resub/: job fails after 100 seconds, and restart
