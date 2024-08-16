@@ -1,5 +1,7 @@
 # Checkpoint / Restart tests on Exascale computing systems
 
+For questions, please contact: Huihuo Zheng <huihuo.zheng>
+
 We have seen that exascale computing systems suffer a lot of unstability which leads to termination of jobs before finishing. Therefore, checkpoint / restart become important to run large scale simulations on ``unstable" system. 
 
 In this github repo, we provide simple program to simulate all kinds of job running issues such as (1) hang; (2) fail in the middle of the run; (3) success. We provide example submission script that can deal with various kind of situations. 
