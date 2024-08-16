@@ -1,6 +1,6 @@
 # Checkpoint / Restart tests on Exascale computing systems
 
-For questions, please contact: Huihuo Zheng <huihuo.zheng>
+For questions, please contact: Huihuo Zheng <huihuo.zheng@anl.gov>
 
 We have seen that exascale computing systems suffer a lot of unstability which leads to termination of jobs before finishing. Therefore, checkpoint / restart become important to run large scale simulations on ``unstable" system. 
 
