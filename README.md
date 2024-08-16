@@ -12,7 +12,7 @@ In this github repo, we provide simple program to simulate all kinds of job runn
   ```bash
   --hang N: to hang for N seconds
   --fail N: to fail the job after N seconds
-  --compute T: compute time per iterations
+  --compute T: compute time per iteration
   --niters NITERS: total number of iterations
   --checkpoint CHECKPOINT: path for checkpoint
   --checkpoint_time T: time for writing one checkpoint
