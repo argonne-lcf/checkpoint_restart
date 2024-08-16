@@ -17,7 +17,7 @@ In this github repo, we provide simple program to simulate all kinds of job runn
   ```
 ## Useful scripts to compose the submission scripts that are able to handle various job execution statuses. 
 
-- ![get_healthy_nodes.sh](./get_healthy_nodes.sh) NODEFILE NUM_NODES_TO_SELECT NEW_NODEFILE
+- [get_healthy_nodes.sh](./get_healthy_nodes.sh) NODEFILE NUM_NODES_TO_SELECT NEW_NODEFILE
   
   This script is to select a subset of healthy nodes from the entire allocation
 
