@@ -29,7 +29,7 @@ get_healthy_nodes.sh $PBS_NODEFILE $JOBSIZE pbs_nodefile$RUN
 export PBS_NODEFILE=pbs_nodefile$RUN
 
 # constantly check the job and kill the job if it hangs for 300 seconds
-check_hang.py --timeout 300 --output $PBS_JOBNAME.o$JOBID:$PBS_JOBNAME.e$JOBID:output.log >> check_hang.r$JOBID &
+check_hang.py --timeout 300 --output $PBS_JOBNAME.o$JOBID:$PBS_JOBNAME.e$JOBID:output.log --command python >> check_hang.r$JOBID &
 
 # run the job
 mpiexec -np $((JOBSIZE*12)) --ppn 12 ${local_rank} python ./test_pyjob.py --compute 10 --niters 100 --output output.log 
@@ -45,6 +45,6 @@ else
 fi
 
 # clear up the nodes for rerun the job
-pkill check_hang.py
+pkill python
 PBS_NODEFILE=nodefile_all flush.sh
 sleep 5

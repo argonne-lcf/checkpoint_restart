@@ -57,6 +57,7 @@ for i in range(checkpoint, args.niters):
 fout.close()    
 if rank==0:
     print(f"Job finished at {datetime.datetime.now()}")
+exit(0)
 if args.fail is not None:
     t1.join()
-    sys.exit(1)
+    
