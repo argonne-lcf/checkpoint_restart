@@ -8,6 +8,8 @@ setup(
         "job_monitoring/check_hang.py",
         "job_monitoring/check_nan.py",
         "utils/get_healthy_nodes.sh",
+        "utils/overalloc.sh",
+        "utils/node_usage_summary.sh",
         "system_monitoring/run_health_checks.py",
         "system_monitoring/dashboard.py",
         "utils/launcher.sh",
