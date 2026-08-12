@@ -276,6 +276,48 @@ python -m check_mate.examples.nan --output ~/nan.sc
 The available examples mirror the historical directories and cover failure,
 hang detection, NaN recovery, and successful completion scenarios.
 
+## System monitoring
+
+- [system_monitoring/README.md](./system_monitoring/README.md):
+  monitoring scripts and dashboard service for JSON-based node health
+  visualization.
+
+## YAML-driven microkernel health checks
+
+- Config file: [system_monitoring/health_checks.yaml](./system_monitoring/health_checks.yaml)
+- Runner: [system_monitoring/run_health_checks.py](./system_monitoring/run_health_checks.py)
+- Build system (C/C++ microkernels): [utils/check_healthy_tests/CMakeLists.txt](./utils/check_healthy_tests/CMakeLists.txt)
+
+Typical usage:
+
+```bash
+# list active checks from YAML
+python system_monitoring/run_health_checks.py --list
+
+# configure/build microkernels, then run enabled checks
+python system_monitoring/run_health_checks.py --build
+
+# run a subset by group
+python system_monitoring/run_health_checks.py --build --groups injection_bisection,memory
+
+# include checks marked disabled in YAML
+python system_monitoring/run_health_checks.py --build --include-disabled --checks triad,flops
+```
+
+The YAML controls:
+
+- which microkernels are enabled (`enabled: true|false`)
+- grouping (`group`) for selective execution
+- concrete launch command (`command`) and optional timeout/env
+- build commands (`build.configure_command` and `build.build_command`)
+
+By default, the YAML keeps MPI/PBS-sensitive checks disabled for local
+development. Enable them on cluster allocations with:
+
+```bash
+python system_monitoring/run_health_checks.py --build --include-disabled --checks simple_injection_bisection,full_injection_bisection,triad,flops,topology
+```
+
 ## Documentation
 
 Comprehensive usage notes—including full CLI reference material, Python API

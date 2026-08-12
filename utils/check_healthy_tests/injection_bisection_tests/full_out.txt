@@ -1,0 +1,102 @@
+mpicc 4.c 
+kaushikvelusamy@x4305c0s0b0n0:/lus/flare/projects/datascience/kaushik/FT/straggler_detection_and_scaling/injection_bisection_tests> mpiexec -np ${NRANKS} -ppn ${RANKS_PER_NODE} --cpu-bind ${CPU_BINDING1}  --no-vni -genvall ./a.out 
+x4305c0s0b0n0 rank=00 | Running tests with msg_size=1048576 bytes, niters=100
+x4305c0s0b0n0 rank=00 | Modes: Injection Bisection
+x4305c0s0b0n0 rank=00 | injection BW = 15.24 GB/s
+x4305c0s0b0n0 rank=01 | injection BW = 15.24 GB/s
+x4305c0s0b0n0 rank=02 | injection BW = 15.23 GB/s
+x4305c0s0b0n0 rank=03 | injection BW = 15.23 GB/s
+x4305c0s0b0n0 rank=04 | injection BW = 15.23 GB/s
+x4305c0s0b0n0 rank=05 | injection BW = 15.23 GB/s
+x4305c0s0b0n0 rank=06 | injection BW = 15.22 GB/s
+x4305c0s0b0n0 rank=07 | injection BW = 15.22 GB/s
+x4305c0s0b0n0 rank=08 | injection BW = 15.22 GB/s
+x4305c0s0b0n0 rank=09 | injection BW = 15.21 GB/s
+x4305c0s0b0n0 rank=10 | injection BW = 15.21 GB/s
+x4305c0s0b0n0 rank=11 | injection BW = 15.21 GB/s
+x4305c0s0b0n0 rank=00 | GLOBAL injection bandwidth = 728.59 GB/s
+x4305c0s1b0n0 rank=12 | injection BW = 15.21 GB/s
+x4305c0s1b0n0 rank=13 | injection BW = 15.20 GB/s
+x4305c0s1b0n0 rank=14 | injection BW = 15.20 GB/s
+x4305c0s1b0n0 rank=15 | injection BW = 15.20 GB/s
+x4305c0s1b0n0 rank=16 | injection BW = 15.20 GB/s
+x4305c0s1b0n0 rank=17 | injection BW = 15.20 GB/s
+x4305c0s1b0n0 rank=18 | injection BW = 15.19 GB/s
+x4305c0s4b0n0 rank=24 | injection BW = 15.18 GB/s
+x4305c0s1b0n0 rank=19 | injection BW = 15.19 GB/s
+x4305c0s4b0n0 rank=25 | injection BW = 15.17 GB/s
+x4305c0s1b0n0 rank=20 | injection BW = 15.19 GB/s
+x4305c0s4b0n0 rank=26 | injection BW = 15.17 GB/s
+x4305c0s4b0n0 rank=27 | injection BW = 15.17 GB/s
+x4305c0s1b0n0 rank=21 | injection BW = 15.18 GB/s
+x4305c0s4b0n0 rank=28 | injection BW = 15.17 GB/s
+x4305c0s4b0n0 rank=29 | injection BW = 15.16 GB/s
+x4305c0s1b0n0 rank=22 | injection BW = 15.18 GB/s
+x4305c0s4b0n0 rank=30 | injection BW = 15.16 GB/s
+x4305c0s4b0n0 rank=31 | injection BW = 15.16 GB/s
+x4305c0s4b0n0 rank=32 | injection BW = 15.16 GB/s
+x4305c0s1b0n0 rank=23 | injection BW = 15.18 GB/s
+x4305c0s4b0n0 rank=33 | injection BW = 15.16 GB/s
+x4305c1s0b0n0 rank=36 | injection BW = 15.15 GB/s
+x4305c0s4b0n0 rank=34 | injection BW = 15.15 GB/s
+x4305c0s4b0n0 rank=35 | injection BW = 15.15 GB/s
+x4305c1s0b0n0 rank=37 | injection BW = 15.15 GB/s
+x4305c1s0b0n0 rank=38 | injection BW = 15.14 GB/s
+x4305c1s0b0n0 rank=39 | injection BW = 15.14 GB/s
+x4305c1s0b0n0 rank=40 | injection BW = 15.14 GB/s
+x4305c1s0b0n0 rank=41 | injection BW = 15.14 GB/s
+x4305c1s0b0n0 rank=42 | injection BW = 15.13 GB/s
+x4305c1s0b0n0 rank=43 | injection BW = 15.13 GB/s
+x4305c1s0b0n0 rank=44 | injection BW = 15.13 GB/s
+x4305c1s0b0n0 rank=45 | injection BW = 15.13 GB/s
+x4305c1s0b0n0 rank=46 | injection BW = 15.13 GB/s
+x4305c1s0b0n0 rank=47 | injection BW = 15.13 GB/s
+x4305c0s0b0n0 rank=00 | bisection BW (partner=24) = 23.41 GB/s
+x4305c0s0b0n0 rank=01 | bisection BW (partner=25) = 23.31 GB/s
+x4305c0s0b0n0 rank=02 | bisection BW (partner=26) = 40.45 GB/s
+x4305c0s0b0n0 rank=03 | bisection BW (partner=27) = 40.38 GB/s
+x4305c0s0b0n0 rank=04 | bisection BW (partner=28) = 23.31 GB/s
+x4305c0s0b0n0 rank=05 | bisection BW (partner=29) = 23.42 GB/s
+x4305c0s0b0n0 rank=06 | bisection BW (partner=30) = 23.41 GB/s
+x4305c0s0b0n0 rank=07 | bisection BW (partner=31) = 23.41 GB/s
+x4305c0s0b0n0 rank=08 | bisection BW (partner=32) = 40.42 GB/s
+x4305c0s4b0n0 rank=24 | bisection BW (partner=0) = 23.41 GB/s
+x4305c0s0b0n0 rank=09 | bisection BW (partner=33) = 40.46 GB/s
+x4305c0s1b0n0 rank=12 | bisection BW (partner=36) = 23.40 GB/s
+x4305c0s0b0n0 rank=10 | bisection BW (partner=34) = 23.30 GB/s
+x4305c0s1b0n0 rank=13 | bisection BW (partner=37) = 23.38 GB/s
+x4305c0s0b0n0 rank=11 | bisection BW (partner=35) = 23.30 GB/s
+x4305c0s1b0n0 rank=14 | bisection BW (partner=38) = 38.71 GB/s
+x4305c0s1b0n0 rank=15 | bisection BW (partner=39) = 38.61 GB/s
+x4305c0s1b0n0 rank=16 | bisection BW (partner=40) = 23.34 GB/s
+x4305c0s0b0n0 rank=00 | BISECTION bandwidth (aggregate two-way) = 1377.16 GB/s
+x4305c0s1b0n0 rank=17 | bisection BW (partner=41) = 23.31 GB/s
+x4305c0s4b0n0 rank=25 | bisection BW (partner=1) = 23.31 GB/s
+x4305c0s1b0n0 rank=18 | bisection BW (partner=42) = 22.52 GB/s
+x4305c0s4b0n0 rank=26 | bisection BW (partner=2) = 40.41 GB/s
+x4305c0s4b0n0 rank=27 | bisection BW (partner=3) = 40.40 GB/s
+x4305c0s1b0n0 rank=19 | bisection BW (partner=43) = 23.39 GB/s
+x4305c0s4b0n0 rank=28 | bisection BW (partner=4) = 23.33 GB/s
+x4305c0s4b0n0 rank=29 | bisection BW (partner=5) = 23.42 GB/s
+x4305c0s4b0n0 rank=30 | bisection BW (partner=6) = 23.40 GB/s
+x4305c0s1b0n0 rank=20 | bisection BW (partner=44) = 38.69 GB/s
+x4305c0s4b0n0 rank=31 | bisection BW (partner=7) = 23.42 GB/s
+x4305c0s4b0n0 rank=32 | bisection BW (partner=8) = 40.43 GB/s
+x4305c0s4b0n0 rank=33 | bisection BW (partner=9) = 40.48 GB/s
+x4305c1s0b0n0 rank=36 | bisection BW (partner=12) = 23.41 GB/s
+x4305c0s1b0n0 rank=21 | bisection BW (partner=45) = 38.77 GB/s
+x4305c0s4b0n0 rank=34 | bisection BW (partner=10) = 23.30 GB/s
+x4305c1s0b0n0 rank=37 | bisection BW (partner=13) = 23.40 GB/s
+x4305c0s1b0n0 rank=22 | bisection BW (partner=46) = 22.67 GB/s
+x4305c0s4b0n0 rank=35 | bisection BW (partner=11) = 23.31 GB/s
+x4305c1s0b0n0 rank=38 | bisection BW (partner=14) = 38.71 GB/s
+x4305c0s1b0n0 rank=23 | bisection BW (partner=47) = 23.26 GB/s
+x4305c1s0b0n0 rank=39 | bisection BW (partner=15) = 38.47 GB/s
+x4305c1s0b0n0 rank=40 | bisection BW (partner=16) = 23.33 GB/s
+x4305c1s0b0n0 rank=41 | bisection BW (partner=17) = 23.29 GB/s
+x4305c1s0b0n0 rank=42 | bisection BW (partner=18) = 22.56 GB/s
+x4305c1s0b0n0 rank=43 | bisection BW (partner=19) = 23.36 GB/s
+x4305c1s0b0n0 rank=44 | bisection BW (partner=20) = 38.67 GB/s
+x4305c1s0b0n0 rank=45 | bisection BW (partner=21) = 38.77 GB/s
+x4305c1s0b0n0 rank=46 | bisection BW (partner=22) = 22.67 GB/s
+x4305c1s0b0n0 rank=47 | bisection BW (partner=23) = 23.27 GB/s

@@ -1,0 +1,142 @@
+kaushikvelusamy@x4305c0s0b0n0:/lus/flare/projects/datascience/kaushik/FT/straggler_detection_and_scaling/injection_bisection_tests> 
+kaushikvelusamy@x4305c0s0b0n0:/lus/flare/projects/datascience/kaushik/FT/straggler_detection_and_scaling/injection_bisection_tests> 
+kaushikvelusamy@x4305c0s0b0n0:/lus/flare/projects/datascience/kaushik/FT/straggler_detection_and_scaling/injection_bisection_tests> cd /lus/flare/projects/datascience/kaushik/FT/straggler_detection_and_scaling/compute_and_microbenchmarks
+kaushikvelusamy@x4305c0s0b0n0:/lus/flare/projects/datascience/kaushik/FT/straggler_detection_and_scaling/compute_and_microbenchmarks> cd src/
+kaushikvelusamy@x4305c0s0b0n0:/lus/flare/projects/datascience/kaushik/FT/straggler_detection_and_scaling/compute_and_microbenchmarks/src> sh ./run_table.sh 
++ '[' -z '' ']'
++ case "$-" in
++ __lmod_vx=x
++ '[' -n x ']'
++ set +x
+Shell debugging temporarily silenced: export LMOD_SH_DBG_ON=1 for this output (/usr/share/lmod/lmod/init/bash)
+Shell debugging restarted
++ unset __lmod_vx
++ mpicxx -fiopenmp -fopenmp-targets=spir64 flops.cpp -o flops
++ mpirun -n 1 -- ./gpu_tile_compact.sh ./flops
+Single Precision Peak Flops: 22742.7 GFlop/s
+Double Precision Peak Flops: 11412.5 GFlop/s
++ mpirun -n 2 -- ./gpu_tile_compact.sh ./flops
+Single Precision Peak Flops: 45210.2 GFlop/s
+Double Precision Peak Flops: 22755.5 GFlop/s
++ mpirun -n 12 -- ./gpu_tile_compact.sh ./flops
+Single Precision Peak Flops: 271029 GFlop/s
+Double Precision Peak Flops: 134978 GFlop/s
++ mpicxx -fiopenmp -fopenmp-targets=spir64 triad.cpp -o triad
++ mpirun -n 1 -- ./gpu_tile_compact.sh ./triad
+Memory Bandwidth (triad): 1036.13 GB/s
++ mpirun -n 2 -- ./gpu_tile_compact.sh ./triad
+Memory Bandwidth (triad): 2053.56 GB/s
++ mpirun -n 12 -- ./gpu_tile_compact.sh ./triad
+Memory Bandwidth (triad): 12106.6 GB/s
++ mpicxx -fsycl pci.cpp -o pci
++ mpirun -n 1 --cpu-bind list:1,2,3,4,5,6,52,53,54,55,56,57 -- ./gpu_tile_compact.sh ./pci
+PCIe Unidirectional Bandwidth (H2D): 54 GB/s
+PCIe Unidirectional Bandwidth (D2H): 53 GB/s
+PCIe Bidirectional Bandwidth: 76 GB/s
++ mpirun -n 2 --cpu-bind list:1,2,3,4,5,6,52,53,54,55,56,57 -- ./gpu_tile_compact.sh ./pci
+PCIe Unidirectional Bandwidth (H2D): 108 GB/s
+PCIe Unidirectional Bandwidth (D2H): 107 GB/s
+PCIe Bidirectional Bandwidth: 153 GB/s
++ mpirun -n 12 --cpu-bind list:1,2,3,4,5,6,52,53,54,55,56,57 -- ./gpu_tile_compact.sh ./pci
+PCIe Unidirectional Bandwidth (H2D): 330 GB/s
+PCIe Unidirectional Bandwidth (D2H): 335 GB/s
+PCIe Bidirectional Bandwidth: 460 GB/s
++ export MPIR_CVAR_CH4_IPC_GPU_ENGINE_TYPE=copy_high_bandwidth
++ MPIR_CVAR_CH4_IPC_GPU_ENGINE_TYPE=copy_high_bandwidth
++ mpicxx -fsycl peer2pear.cpp -o peer2pear
++ mpirun -n 2 -- ./gpu_tile_compact.sh ./peer2pear Tile2Tile
+Tile2Tile Unidirectional Bandwidth: 4 GB/s
+Tile2Tile Bidirectional Bandwidth: 5 GB/s
++ mpirun -n 12 -- ./gpu_tile_compact.sh ./peer2pear Tile2Tile
+Tile2Tile Unidirectional Bandwidth: 19 GB/s
+Tile2Tile Bidirectional Bandwidth: 29 GB/s
++ icpx -lze_loader topology.cpp -o topology
++ mpirun -n 2 -- ./gpu_tile_plan_compact.sh ./peer2pear GPU2GPU
+GPU2GPU Unidirectional Bandwidth: 4 GB/s
+GPU2GPU Bidirectional Bandwidth: 5 GB/s
++ mpirun -n 12 -- ./gpu_tile_plan_compact.sh ./peer2pear GPU2GPU
+GPU2GPU Unidirectional Bandwidth: 19 GB/s
+GPU2GPU Bidirectional Bandwidth: 30 GB/s
++ mpicxx -fsycl gemm.cpp -qmkl -o gemm
++ mpirun -n 1 -- ./gpu_tile_compact.sh ./gemm
+DGEMM: 10252.5 GFlop/s
+SGEMM: 22003.8 GFlop/s
+HGEMM: 240152 GFlop/s
+BF16GEMM: 254368 GFlop/s
+TF32GEMM: 115945 GFlop/s
+I8GEMM: 531521 GFlop/s
++ mpirun -n 2 -- ./gpu_tile_compact.sh ./gemm
+DGEMM: 20582.6 GFlop/s
+SGEMM: 43981.8 GFlop/s
+HGEMM: 477250 GFlop/s
+BF16GEMM: 506981 GFlop/s
+TF32GEMM: 239742 GFlop/s
+I8GEMM: 992766 GFlop/s
++ mpirun -n 12 -- ./gpu_tile_compact.sh ./gemm
+DGEMM: 124123 GFlop/s
+SGEMM: 248228 GFlop/s
+HGEMM: 2.37963e+06 GFlop/s
+BF16GEMM: 2.49166e+06 GFlop/s
+TF32GEMM: 1.22375e+06 GFlop/s
+I8GEMM: 5.00211e+06 GFlop/s
++ mpicxx -fsycl fftc2c.cpp -qmkl -o fftc2c
+fftc2c.cpp:93:11: warning: 'set_value' is deprecated: Use set_value(config_param, const std::vector<std::int64_t>&) instead. [-Wdeprecated-declarations]
+   93 |   desc_2d.set_value(oneapi::mkl::dft::config_param::FWD_STRIDES, rstrides);
+      |           ^
+/opt/aurora/24.347.0/oneapi/mkl/latest/include/oneapi/mkl/dft.hpp:207:7: note: 'set_value' has been explicitly marked deprecated here
+  207 |     [[deprecated("Use set_value(config_param, const std::vector<std::int64_t>&) instead.")]]
+      |       ^
+fftc2c.cpp:94:11: warning: 'set_value' is deprecated: Use set_value(config_param, const std::vector<std::int64_t>&) instead. [-Wdeprecated-declarations]
+   94 |   desc_2d.set_value(oneapi::mkl::dft::config_param::BWD_STRIDES, cstrides);
+      |           ^
+/opt/aurora/24.347.0/oneapi/mkl/latest/include/oneapi/mkl/dft.hpp:207:7: note: 'set_value' has been explicitly marked deprecated here
+  207 |     [[deprecated("Use set_value(config_param, const std::vector<std::int64_t>&) instead.")]]
+      |       ^
+2 warnings generated.
+fftc2c.cpp:93:11: warning: 'set_value' is deprecated: Use set_value(config_param, const std::vector<std::int64_t>&) instead. [-Wdeprecated-declarations]
+   93 |   desc_2d.set_value(oneapi::mkl::dft::config_param::FWD_STRIDES, rstrides);
+      |           ^
+/opt/aurora/24.347.0/oneapi/mkl/latest/include/oneapi/mkl/dft.hpp:207:7: note: 'set_value' has been explicitly marked deprecated here
+  207 |     [[deprecated("Use set_value(config_param, const std::vector<std::int64_t>&) instead.")]]
+      |       ^
+fftc2c.cpp:94:11: warning: 'set_value' is deprecated: Use set_value(config_param, const std::vector<std::int64_t>&) instead. [-Wdeprecated-declarations]
+   94 |   desc_2d.set_value(oneapi::mkl::dft::config_param::BWD_STRIDES, cstrides);
+      |           ^
+/opt/aurora/24.347.0/oneapi/mkl/latest/include/oneapi/mkl/dft.hpp:207:7: note: 'set_value' has been explicitly marked deprecated here
+  207 |     [[deprecated("Use set_value(config_param, const std::vector<std::int64_t>&) instead.")]]
+      |       ^
+2 warnings generated.
++ mpirun -n 1 -- ./gpu_tile_compact.sh ./fftc2c
+Single-precision FFT C2C 1D: 3157.85 GFlop/s
+Single-precision FFT C2C 2D: 3187.45 GFlop/s
++ mpirun -n 2 -- ./gpu_tile_compact.sh ./fftc2c
+Single-precision FFT C2C 1D: 6321.3 GFlop/s
+Single-precision FFT C2C 2D: 6483.54 GFlop/s
++ mpirun -n 12 -- ./gpu_tile_compact.sh ./fftc2c
+Single-precision FFT C2C 1D: 34892.1 GFlop/s
+Single-precision FFT C2C 2D: 34284.2 GFlop/s
+|                                     |   One Tile |   Full Node | Scaling |
+|                                  ---|-----------:| -----------:|    ----:|
+|         Single Precision Peak Flops | 23 TFlop/s | 271 TFlop/s |    11.9 |
+|         Double Precision Peak Flops | 11 TFlop/s | 135 TFlop/s |    11.8 |
+|            Memory Bandwidth (triad) |     1 TB/s |     12 TB/s |    11.7 |
+| PCIe Unidirectional Bandwidth (H2D) |    54 GB/s |    330 GB/s |     6.1 |
+| PCIe Unidirectional Bandwidth (D2H) |    53 GB/s |    335 GB/s |     6.3 |
+|        PCIe Bidirectional Bandwidth |    76 GB/s |    460 GB/s |     6.1 |
+|  Tile2Tile Unidirectional Bandwidth |     4 GB/s |     19 GB/s |     4.8 |
+|   Tile2Tile Bidirectional Bandwidth |     5 GB/s |     29 GB/s |     5.8 |
+|    GPU2GPU Unidirectional Bandwidth |     4 GB/s |     19 GB/s |     4.8 |
+|     GPU2GPU Bidirectional Bandwidth |     5 GB/s |     30 GB/s |     6.0 |
+|          |    One Tile |    Full Node | Scaling |
+|       ---| -----------:|  -----------:|    ----:|
+|    DGEMM |  10 TFlop/s |  124 TFlop/s |    12.1 |
+|    SGEMM |  22 TFlop/s |  248 TFlop/s |    11.3 |
+|    HGEMM | 240 TFlop/s | 2380 TFlop/s |     9.9 |
+| BF16GEMM | 254 TFlop/s | 2492 TFlop/s |     9.8 |
+| TF32GEMM | 116 TFlop/s | 1224 TFlop/s |    10.6 |
+|   I8GEMM | 532 TFlop/s | 5002 TFlop/s |     9.4 |
+|                             |   One Tile |  Full Node | Scaling |
+|                          ---|-----------:|-----------:|    ----:|
+| Single-precision FFT C2C 1D |  3 TFlop/s | 35 TFlop/s |    11.0 |
+| Single-precision FFT C2C 2D |  3 TFlop/s | 34 TFlop/s |    10.8 |
+kaushikvelusamy@x4305c0s0b0n0:/lus/flare/projects/datascience/kaushik/FT/straggler_detection_and_scaling/compute_and_microbenchmarks/src> 

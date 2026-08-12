@@ -1,0 +1,111 @@
+
+kaushikvelusamy@x4305c0s0b0n0:/lus/flare/projects/datascience/kaushik/FT/straggler_detection_and_scaling/injection_bisection_tests> mpicc 3.c 
+kaushikvelusamy@x4305c0s0b0n0:/lus/flare/projects/datascience/kaushik/FT/straggler_detection_and_scaling/injection_bisection_tests> mpiexec -np ${NRANKS} -ppn ${RANKS_PER_NODE} --cpu-bind ${CPU_BINDING1}  --no-vni -genvall ./a.out 
+x4305c0s0b0n0 rank=00 | Running tests with msg_size=1048576 bytes, niters=100
+x4305c0s0b0n0 rank=00 | Modes: Injection Bisection
+x4305c0s0b0n0 rank=00 | injection (one-way send only) = 8.316 GB/s
+x4305c0s0b0n0 rank=01 | injection (one-way send only) = 8.318 GB/s
+x4305c0s0b0n0 rank=02 | injection (one-way send only) = 8.325 GB/s
+x4305c0s0b0n0 rank=03 | injection (one-way send only) = 8.326 GB/s
+x4305c0s0b0n0 rank=04 | injection (one-way send only) = 8.311 GB/s
+x4305c0s0b0n0 rank=05 | injection (one-way send only) = 8.319 GB/s
+x4305c0s0b0n0 rank=06 | injection (one-way send only) = 8.325 GB/s
+x4305c0s0b0n0 rank=07 | injection (one-way send only) = 8.328 GB/s
+x4305c0s0b0n0 rank=08 | injection (one-way send only) = 8.322 GB/s
+x4305c0s0b0n0 rank=09 | injection (one-way send only) = 8.325 GB/s
+x4305c0s0b0n0 rank=10 | injection (one-way send only) = 8.295 GB/s
+x4305c0s0b0n0 rank=11 | injection (one-way send only) = 8.295 GB/s
+x4305c0s0b0n0 rank=00 | [node aggregate injection] = 99.806 GB/s
+x4305c0s1b0n0 rank=12 | injection (one-way send only) = 8.304 GB/s
+x4305c0s1b0n0 rank=13 | injection (one-way send only) = 8.305 GB/s
+x4305c0s1b0n0 rank=14 | injection (one-way send only) = 8.317 GB/s
+x4305c0s1b0n0 rank=15 | injection (one-way send only) = 8.320 GB/s
+x4305c0s1b0n0 rank=16 | injection (one-way send only) = 8.302 GB/s
+x4305c0s1b0n0 rank=17 | injection (one-way send only) = 8.306 GB/s
+x4305c0s4b0n0 rank=24 | injection (one-way send only) = 8.296 GB/s
+x4305c0s1b0n0 rank=18 | injection (one-way send only) = 8.298 GB/s
+x4305c0s4b0n0 rank=25 | injection (one-way send only) = 8.298 GB/s
+x4305c0s1b0n0 rank=12 | [node aggregate injection] = 99.688 GB/s
+x4305c0s4b0n0 rank=26 | injection (one-way send only) = 8.312 GB/s
+x4305c0s1b0n0 rank=19 | injection (one-way send only) = 8.304 GB/s
+x4305c0s4b0n0 rank=27 | injection (one-way send only) = 8.309 GB/s
+x4305c0s1b0n0 rank=20 | injection (one-way send only) = 8.319 GB/s
+x4305c0s4b0n0 rank=28 | injection (one-way send only) = 8.296 GB/s
+x4305c0s4b0n0 rank=29 | injection (one-way send only) = 8.298 GB/s
+x4305c0s1b0n0 rank=21 | injection (one-way send only) = 8.321 GB/s
+x4305c0s4b0n0 rank=30 | injection (one-way send only) = 8.306 GB/s
+x4305c0s4b0n0 rank=24 | [node aggregate injection] = 99.622 GB/s
+x4305c0s1b0n0 rank=22 | injection (one-way send only) = 8.296 GB/s
+x4305c0s4b0n0 rank=31 | injection (one-way send only) = 8.297 GB/s
+x4305c0s4b0n0 rank=32 | injection (one-way send only) = 8.310 GB/s
+x4305c0s1b0n0 rank=23 | injection (one-way send only) = 8.296 GB/s
+x4305c0s4b0n0 rank=33 | injection (one-way send only) = 8.307 GB/s
+x4305c0s4b0n0 rank=34 | injection (one-way send only) = 8.296 GB/s
+x4305c0s0b0n0 rank=00 | GLOBAL injection (one-way)       = 398.726 GB/s
+x4305c0s0b0n0 rank=00 | GLOBAL injection (bidirectional) = 797.452 GB/s (approx)
+x4305c0s4b0n0 rank=35 | injection (one-way send only) = 8.295 GB/s
+x4305c1s0b0n0 rank=36 | injection (one-way send only) = 8.305 GB/s
+x4305c1s0b0n0 rank=37 | injection (one-way send only) = 8.298 GB/s
+x4305c1s0b0n0 rank=38 | injection (one-way send only) = 8.299 GB/s
+x4305c1s0b0n0 rank=39 | injection (one-way send only) = 8.305 GB/s
+x4305c1s0b0n0 rank=40 | injection (one-way send only) = 8.300 GB/s
+x4305c1s0b0n0 rank=41 | injection (one-way send only) = 8.296 GB/s
+x4305c1s0b0n0 rank=42 | injection (one-way send only) = 8.301 GB/s
+x4305c1s0b0n0 rank=36 | [node aggregate injection] = 99.609 GB/s
+x4305c1s0b0n0 rank=43 | injection (one-way send only) = 8.297 GB/s
+x4305c1s0b0n0 rank=44 | injection (one-way send only) = 8.306 GB/s
+x4305c1s0b0n0 rank=45 | injection (one-way send only) = 8.305 GB/s
+x4305c1s0b0n0 rank=46 | injection (one-way send only) = 8.301 GB/s
+x4305c1s0b0n0 rank=47 | injection (one-way send only) = 8.296 GB/s
+x4305c0s0b0n0 rank=00 | bisection (two-way with partner 24) = 6.078 GB/s
+x4305c0s0b0n0 rank=01 | bisection (two-way with partner 25) = 6.064 GB/s
+x4305c0s0b0n0 rank=02 | bisection (two-way with partner 26) = 7.125 GB/s
+x4305c0s0b0n0 rank=03 | bisection (two-way with partner 27) = 7.019 GB/s
+x4305c0s0b0n0 rank=04 | bisection (two-way with partner 28) = 6.089 GB/s
+x4305c0s0b0n0 rank=05 | bisection (two-way with partner 29) = 6.058 GB/s
+x4305c0s0b0n0 rank=06 | bisection (two-way with partner 30) = 6.518 GB/s
+x4305c0s0b0n0 rank=07 | bisection (two-way with partner 31) = 6.485 GB/s
+x4305c0s0b0n0 rank=08 | bisection (two-way with partner 32) = 7.282 GB/s
+x4305c0s0b0n0 rank=09 | bisection (two-way with partner 33) = 7.419 GB/s
+x4305c0s0b0n0 rank=10 | bisection (two-way with partner 34) = 6.550 GB/s
+x4305c0s0b0n0 rank=11 | bisection (two-way with partner 35) = 6.544 GB/s
+x4305c0s4b0n0 rank=24 | bisection (two-way with partner 0) = 6.078 GB/s
+x4305c0s4b0n0 rank=25 | bisection (two-way with partner 1) = 6.063 GB/s
+x4305c0s4b0n0 rank=26 | bisection (two-way with partner 2) = 7.123 GB/s
+x4305c0s4b0n0 rank=27 | bisection (two-way with partner 3) = 7.018 GB/s
+x4305c0s0b0n0 rank=00 | Bisection measured (two-way aggregate) = 291.744 GB/s
+x4305c0s0b0n0 rank=00 | Bisection measured (one-way  aggregate) = 145.872 GB/s
+x4305c0s0b0n0 rank=00 | Non-blocking % (one-way)        = 36.58 %
+x4305c0s0b0n0 rank=00 | Non-blocking % (bidirectional) = 36.58 %
+x4305c0s4b0n0 rank=28 | bisection (two-way with partner 4) = 6.086 GB/s
+x4305c0s4b0n0 rank=29 | bisection (two-way with partner 5) = 6.056 GB/s
+x4305c0s4b0n0 rank=30 | bisection (two-way with partner 6) = 6.519 GB/s
+x4305c0s4b0n0 rank=31 | bisection (two-way with partner 7) = 6.484 GB/s
+x4305c0s4b0n0 rank=32 | bisection (two-way with partner 8) = 7.282 GB/s
+x4305c0s4b0n0 rank=33 | bisection (two-way with partner 9) = 7.417 GB/s
+x4305c0s4b0n0 rank=34 | bisection (two-way with partner 10) = 6.549 GB/s
+x4305c0s1b0n0 rank=12 | bisection (two-way with partner 36) = 6.295 GB/s
+x4305c0s4b0n0 rank=35 | bisection (two-way with partner 11) = 6.546 GB/s
+x4305c0s1b0n0 rank=13 | bisection (two-way with partner 37) = 6.263 GB/s
+x4305c0s1b0n0 rank=14 | bisection (two-way with partner 38) = 7.028 GB/s
+x4305c1s0b0n0 rank=36 | bisection (two-way with partner 12) = 6.296 GB/s
+x4305c1s0b0n0 rank=37 | bisection (two-way with partner 13) = 6.264 GB/s
+x4305c0s1b0n0 rank=15 | bisection (two-way with partner 39) = 7.037 GB/s
+x4305c0s1b0n0 rank=16 | bisection (two-way with partner 40) = 6.279 GB/s
+x4305c0s1b0n0 rank=17 | bisection (two-way with partner 41) = 6.269 GB/s
+x4305c0s1b0n0 rank=18 | bisection (two-way with partner 42) = 6.662 GB/s
+x4305c0s1b0n0 rank=19 | bisection (two-way with partner 43) = 6.563 GB/s
+x4305c0s1b0n0 rank=20 | bisection (two-way with partner 44) = 7.325 GB/s
+x4305c0s1b0n0 rank=21 | bisection (two-way with partner 45) = 7.279 GB/s
+x4305c1s0b0n0 rank=38 | bisection (two-way with partner 14) = 7.028 GB/s
+x4305c1s0b0n0 rank=39 | bisection (two-way with partner 15) = 7.037 GB/s
+x4305c0s1b0n0 rank=22 | bisection (two-way with partner 46) = 6.550 GB/s
+x4305c1s0b0n0 rank=40 | bisection (two-way with partner 16) = 6.278 GB/s
+x4305c1s0b0n0 rank=41 | bisection (two-way with partner 17) = 6.270 GB/s
+x4305c1s0b0n0 rank=42 | bisection (two-way with partner 18) = 6.662 GB/s
+x4305c0s1b0n0 rank=23 | bisection (two-way with partner 47) = 6.686 GB/s
+x4305c1s0b0n0 rank=43 | bisection (two-way with partner 19) = 6.566 GB/s
+x4305c1s0b0n0 rank=44 | bisection (two-way with partner 20) = 7.325 GB/s
+x4305c1s0b0n0 rank=45 | bisection (two-way with partner 21) = 7.282 GB/s
+x4305c1s0b0n0 rank=46 | bisection (two-way with partner 22) = 6.553 GB/s
+x4305c1s0b0n0 rank=47 | bisection (two-way with partner 23) = 6.685 GB/s

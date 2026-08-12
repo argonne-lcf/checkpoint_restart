@@ -1,0 +1,86 @@
+default_env: {}
+
+build:
+  enabled: true
+  source_dir: "{repo_root}/utils/check_healthy_tests"
+  build_dir: "{repo_root}/build/health_checks"
+  configure_command:
+    - cmake
+    - -S
+    - "{source_dir}"
+    - -B
+    - "{build_dir}"
+    - -DHEALTH_CHECKS_ENABLE_MPI=ON
+    - -DHEALTH_CHECKS_ENABLE_OPENMP=ON
+    - -DHEALTH_CHECKS_ENABLE_LEVEL_ZERO=OFF
+  build_command:
+    - cmake
+    - --build
+    - "{build_dir}"
+    - -j
+
+checks:
+  - id: hello_world_scale
+    group: smoke
+    enabled: true
+    description: Basic MPI launch sanity.
+    command: "bash -lc 'if [ -n \"$PBS_NODEFILE\" ]; then bash {repo_root}/utils/check_healthy_tests/hello_world_scale.sh; else echo \"Skipping hello_world_scale: PBS_NODEFILE is not set\"; fi'"
+
+  - id: mem_and_gpu_row
+    group: memory
+    enabled: true
+    description: CPU/GPU memory snapshot.
+    command:
+      - "{build_dir}/mem_and_gpu_row"
+      - --csv
+
+  - id: simple_injection_bisection
+    group: injection_bisection
+    enabled: false
+    description: Injection/bisection communication test (MPI required).
+    command:
+      - mpiexec
+      - -n
+      - "4"
+      - "{build_dir}/simple_injection_bisection"
+      - --iters
+      - "10"
+
+  - id: full_injection_bisection
+    group: injection_bisection
+    enabled: false
+    description: Full-scale injection/bisection test.
+    command:
+      - mpiexec
+      - -n
+      - "4"
+      - "{build_dir}/full_injection_bisection"
+      - --iters
+      - "10"
+
+  - id: triad
+    group: interconnect
+    enabled: false
+    description: OpenMP offload memory bandwidth test.
+    command:
+      - mpiexec
+      - -n
+      - "2"
+      - "{build_dir}/triad"
+
+  - id: flops
+    group: interconnect
+    enabled: false
+    description: OpenMP offload FLOPS test.
+    command:
+      - mpiexec
+      - -n
+      - "2"
+      - "{build_dir}/flops"
+
+  - id: topology
+    group: topology
+    enabled: false
+    description: Level Zero fabric topology (requires Level Zero headers/libs).
+    command:
+      - "{build_dir}/topology"
