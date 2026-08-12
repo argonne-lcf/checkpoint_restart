@@ -168,7 +168,7 @@ This repository includes several scripts to help manage and monitor jobs. After 
 
 - `check-mate launcher`: Export launch-friendly environment variables derived from common PBS/PMI metadata before executing a command.
   ```bash
-  check-mate launcher -- python test_pyjob.py --hang 30
+  check-mate launcher -- python -m check_mate.test --hang 30
   ```
 - `check-mate flush`: Invoke the bundled flush helper to clean up processes on allocated nodes (requires `clush`).
   ```bash
@@ -176,7 +176,7 @@ This repository includes several scripts to help manage and monitor jobs. After 
   ```
 
 ## Simulation of job execution: hang, fail, success
-The test_pyjob.py script allows you to simulate various job behaviors:
+The `check_mate.test` module allows you to simulate various job behaviors:
 ```bash
 $ printf '127.0.0.1\n127.0.0.1\n' > nodes.txt
 $ check-mate get-healthy-nodes nodes.txt 1 selected.txt
@@ -250,11 +250,11 @@ $ check-mate-nan --outputs demo.log --check 1 --timeout 0 --dry-run
 
 ## Simulation harness
 
-The `test_pyjob.py` helper can simulate failure, hanging, and successful runs.
+The `check_mate.test` module can simulate failure, hanging, and successful runs.
 Use it to validate your recovery strategy locally:
 
 ```bash
-python test_pyjob.py --fail 120 --checkpoint ./chkpt --niters 1000
+python -m check_mate.test --fail 120 --checkpoint ./chkpt --niters 1000
 ```
 
 The `examples/` directory contains archived run logs for failed, hanging,
