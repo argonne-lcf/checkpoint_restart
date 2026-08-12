@@ -18,7 +18,7 @@ def test_read_script_returns_script_contents():
     script = examples.read_script("fail")
     assert script.startswith("#!/bin/bash")
     assert "check-mate-hang" in script
-    assert "python -m check_mate.examples.test_pyjob" in script
+    assert "python -m check_mate.test" in script
 
 
 def test_run_example_cli_prints_script(capsys):

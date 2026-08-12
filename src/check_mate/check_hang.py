@@ -7,7 +7,6 @@ import argparse
 import os
 import shlex
 import subprocess
-import sys
 import time
 from pathlib import Path
 from time import localtime, strftime
@@ -92,7 +91,8 @@ def main():
     # Deduplicate while preserving order
     _seen = set()
     files = []
-    to_watch = args.outputs.split(" ")
+    # Accept colon/comma/space-separated lists (matches --outputs help).
+    to_watch = args.outputs.replace(",", ":").replace(" ", ":").split(":")
     logger.info(f"Watching {to_watch}")
     for part in to_watch:
         part = part.strip()
@@ -172,7 +172,7 @@ def main():
                             logger.info(f"Waiting {args.grace}s grace period before exit...")
                             time.sleep(args.grace)
                     except Exception as e:
-                        logger.info(f"Failed to execute kill command: {e}", file=sys.stderr)
+                        logger.error(f"Failed to execute kill command: {e}")
                 else:
                     logger.info("(dry-run) Skipping kill execution")
 

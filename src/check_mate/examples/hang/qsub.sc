@@ -25,7 +25,7 @@ echo "Started running job at `date`"
 for RUN in `seq 1 $MAX_TRIALS`
 do
     # select a subset of nodes to run the job
-    get_healthy_nodes.sh $PBS_NODEFILE $JOBSIZE pbs_nodefile$RUN
+    check-mate get-healthy-nodes $PBS_NODEFILE $JOBSIZE pbs_nodefile$RUN
     export PBS_NODEFILE=pbs_nodefile$RUN
 
     # constantly check the job and kill the job if it hangs for 300 seconds
@@ -34,9 +34,9 @@ do
     # run the actual job, in this case, the job will run for 200 seconds and fail (finished about 9 iterations each time)
     if [[ $RUN -lt 2 ]]; then
 	# only hang for the first two times
-        mpiexec -np $((JOBSIZE*12)) --ppn 12 launcher.sh python -m check_mate.examples.test_pyjob --compute 2 --niters 100 --output output.log --hang 400
+        mpiexec -np $((JOBSIZE*12)) --ppn 12 check-mate launcher python -m check_mate.test --compute 2 --niters 100 --output output.log --hang 400
     else
-        mpiexec -np $((JOBSIZE*12)) --ppn 12 launcher.sh python -m check_mate.examples.test_pyjob --compute 2 --niters 100 --output output.log
+        mpiexec -np $((JOBSIZE*12)) --ppn 12 check-mate launcher python -m check_mate.test --compute 2 --niters 100 --output output.log
     fi
     EXIT_CODE=$?
     # Check the job status
@@ -49,7 +49,7 @@ do
     echo "Rerun the job at `date`; time of trials: $RUN"
     # clear up the nodes for rerun the job
     pkill check-mate-hang
-    PBS_NODEFILE=nodefile_all flush.sh
+    PBS_NODEFILE=nodefile_all check-mate flush
     sleep 5
 done
 

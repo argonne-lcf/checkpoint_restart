@@ -46,20 +46,20 @@ _COMMAND_SUMMARY = "\n".join(_COMMAND_LINES)
 
 
 def _run_shell(script: str, argv: Iterable[str]) -> int:
-    """Execute a packaged shell script with ``bash``."""
+    """Execute a packaged shell script with ``bash``.
+
+    Output is streamed to the parent's stdout/stderr rather than captured, so
+    long-running wrappers (e.g. ``launcher`` under ``mpiexec``) stream live and
+    diagnostics written to stderr are never hidden.
+    """
     try:
         resource = resources.files(_RESOURCE_PACKAGE) / script
     except (FileNotFoundError, ModuleNotFoundError):  # pragma: no cover - importlib edge cases
         raise RuntimeError(f"Unable to locate bundled script: {script}") from None
 
     with resources.as_file(resource) as path:
-        args = list(argv)
         try:
-            result = subprocess.run(
-                ["bash", str(path), *args],
-                capture_output=True,
-                text=True,
-            )
+            result = subprocess.run(["bash", str(path), *list(argv)])
         except KeyboardInterrupt:  # pragma: no cover - user interrupt
             print("Execution interrupted by user.", file=sys.stderr)
             return 130
@@ -68,19 +68,11 @@ def _run_shell(script: str, argv: Iterable[str]) -> int:
                 f"Failed to execute script '{script}': {exc.strerror or exc}"
             ) from exc
 
-    if result.stdout:
-        print(result.stdout, end="")
     if result.returncode != 0:
-        if result.stderr:
-            print(
-                f"Error running script '{script}':\n{result.stderr}",
-                file=sys.stderr,
-            )
-        else:
-            print(
-                f"Error running script '{script}':\nNo error output captured.",
-                file=sys.stderr,
-            )
+        print(
+            f"Error running script '{script}' (exit code {result.returncode}).",
+            file=sys.stderr,
+        )
     return result.returncode
 
 
