@@ -140,7 +140,7 @@ def try_kill(args: argparse.Namespace) -> None:
                 try:
                     os.kill(args.pid, signal.SIGKILL)
                 except Exception as e:
-                    logger.info(f"[ERROR] SIGKILL failed for PID {args.pid}: {e}")
+                    logger.error(f"[ERROR] SIGKILL failed for PID {args.pid}: {e}")
 
     # 2) Arbitrary kill command (works for PBS, etc.)
     if args.kill_command:

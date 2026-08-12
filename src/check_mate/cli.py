@@ -119,7 +119,12 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - convenienc
     parser.add_argument("args", nargs=argparse.REMAINDER)
 
     ns = parser.parse_args(argv)
-    return _run_shell(_TOOL_SCRIPTS[ns.command], ns.args)
+    forwarded = ns.args
+    # argparse.REMAINDER keeps a literal "--" sentinel (documented as
+    # `check-mate launcher -- <cmd>`); drop it so it isn't passed to the script.
+    if forwarded and forwarded[0] == "--":
+        forwarded = forwarded[1:]
+    return _run_shell(_TOOL_SCRIPTS[ns.command], forwarded)
 
 
 if __name__ == "__main__":  # pragma: no cover - script entry point

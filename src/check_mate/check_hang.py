@@ -70,7 +70,7 @@ def main():
         dest="outputs",
         default="chkpt/latest",
         type=str,
-        help="Colon-separated list of output files to watch (e.g., 'a.out:train.log').",
+        help="Colon- (or comma/space-) separated output files to watch (e.g., 'a.out:train.log').",
     )
     parser.add_argument(
         "--grace",

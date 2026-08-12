@@ -29,7 +29,7 @@ do
     export PBS_NODEFILE=pbs_nodefile$RUN
 
     # constantly check the job and kill the job if it hangs for 300 seconds
-    check-mate-hang --timeout 300 --outputs $PBS_JOBNAME.o$JOBID:$PBS_JOBNAME.e$JOBID:output.log --kill-command "pkill -u $USER mpiexe" >> check_hang.r$JOBID &
+    check-mate-hang --timeout 300 --outputs $PBS_JOBNAME.o$JOBID:$PBS_JOBNAME.e$JOBID:output.log --kill-command "pkill -u $USER mpiexec" >> check_hang.r$JOBID &
 
     # run the actual job, in this case, the job will run for 200 seconds and fail (finished about 9 iterations each time)
     if [[ $RUN -lt 2 ]]; then
