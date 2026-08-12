@@ -7,7 +7,7 @@ glance.
 
 ## `get_healthy_nodes.sh`
 
-`get_healthy_nodes.sh NODEFILE SELECT_COUNT OUTPUT_FILE` inspects the allocation that PBS provides and
+`get_healthy_nodes.sh NODEFILE SELECT_COUNT OUTPUT_FILE` (in `utils/`) inspects the allocation that PBS provides and
 builds a node file containing only the first `SELECT_COUNT` responsive hosts.  The script launches
 parallel `ping` checks, records healthy nodes, and concatenates the requested number of results.
 
@@ -41,7 +41,7 @@ sequenceDiagram
 
 ## `flush.sh`
 
-`flush.sh` cleans residual user processes across the nodes of a job.  The first node in
+`flush.sh` (in `utils/`) cleans residual user processes across the nodes of a job.  The first node in
 `$PBS_NODEFILE` is considered the head node and is skipped; all other unique nodes receive a `pkill`
 call that targets the current user ID.
 
@@ -62,26 +62,29 @@ sequenceDiagram
     clush->>Nodes: Issue pkill for user
 ```
 
-## `local_rank.sh`
+## `launcher.sh`
 
-`local_rank.sh` normalizes environment variables required by distributed PyTorch or MPI launchers. It
-prioritizes PALS/PMIx variables when available, computes a global `WORLD_SIZE`, selects a master
-address, and finally delegates to the command that was supplied on the script's command line.
+`launcher.sh` (in `utils/`) is a thin MPI rank shim. It reads the per-rank environment that PALS/PMIx
+exports on Aurora — falling back to PMIx values first, then overriding with PALS values — and exports
+`RANK`, `LOCAL_RANK`, and `WORLD_SIZE` for the application. `WORLD_SIZE` is computed as
+`PALS_LOCAL_SIZE * PBS_JOBSIZE` (unique nodes in `$PBS_NODEFILE`). If any of these variables are unset,
+it falls back to `RANK=0`, `LOCAL_RANK=0`, `WORLD_SIZE=1`. It then execs the command passed on its
+command line (`$@`). It does **not** set `MASTER_ADDR`/`MASTER_PORT`.
 
 ### Flow of control
 
 ```mermaid
 sequenceDiagram
-    participant Launcher as MPI/PBS launcher
-    participant Script as local_rank.sh
+    participant Launcher as mpiexec
+    participant Script as launcher.sh
     participant Env as Environment
     participant App as Target command
 
-    Launcher->>Script: Provide PMIx/PALS environment and arguments
-    Script->>Env: Read PMIX_* and PALS_* rank variables
-    Script->>Env: Calculate WORLD_SIZE and fall back to defaults when missing
-    Script->>Env: Derive MASTER_ADDR/PORT from PBS nodefile head
-    Script->>App: Execute provided command with normalized environment
+    Launcher->>Script: Provide PMIx/PALS environment and the command to run
+    Script->>Env: Read PMIX_* then PALS_* rank variables
+    Script->>Env: Export RANK, LOCAL_RANK, WORLD_SIZE (PALS_LOCAL_SIZE * PBS_JOBSIZE)
+    Script->>Env: Fall back to RANK=0, LOCAL_RANK=0, WORLD_SIZE=1 when unset
+    Script->>App: exec "$@" (the provided command)
 ```
 
 ## `qsub_multi_mpiexec.sc`
@@ -103,47 +106,17 @@ sequenceDiagram
     Script->>Script: Initialize modules, environment, MAX_TRIALS
     loop For each trial up to MAX_TRIALS
         Script->>Nodes: get_healthy_nodes.sh -> subset nodefile
-        Script->>Monitor: Start background hang detection
-        Script->>MPI: Launch mpiexec with local_rank shim
+        Script->>Monitor: Start check_hang.py in background
+        Script->>MPI: Launch mpiexec with launcher.sh shim
         MPI-->>Script: Return exit code
         alt Success
             Script->>PBS: Log success and break loop
         else Failure
             Script->>PBS: Log failure and intention to retry
-            Script->>Nodes: pkill python
+            Script->>Monitor: pkill check_hang.py
             Script->>Nodes: flush.sh to clean compute hosts
             Script->>Script: sleep 5 before retry
         end
     end
     Script->>PBS: Emit final completion message
-```
-
-## `qsub_multi_qsub.sc`
-
-`qsub_multi_qsub.sc` is an alternative PBS submission script that resubmits itself upon failure. It
-performs one trial per submission and uses the same helper utilities for health checks and cleanup.
-
-### Flow of control
-
-```mermaid
-sequenceDiagram
-    participant PBS as PBS scheduler
-    participant Script as qsub_multi_qsub.sc
-    participant Nodes as Allocated nodes
-    participant Monitor as check_hang.py
-    participant MPI as mpiexec job
-
-    PBS->>Script: Launch job with allocation
-    Script->>Script: Initialize modules and environment
-    Script->>Nodes: get_healthy_nodes.sh -> subset nodefile
-    Script->>Monitor: Start background hang detection
-    Script->>MPI: Launch mpiexec with local_rank shim
-    MPI-->>Script: Return exit code
-    alt Success
-        Script->>PBS: Log success and exit
-    else Failure
-        Script->>PBS: Log failure and call qsub on itself
-        Script->>Nodes: pkill python
-        Script->>Nodes: flush.sh cleanup and sleep 5
-    end
 ```

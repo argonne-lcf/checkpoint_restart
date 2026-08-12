@@ -12,20 +12,21 @@ The repository provides the following building blocks:
 
 - **Synthetic workload** – `test_pyjob.py` simulates a distributed
   application that iterates, writes checkpoints, and can be instructed
-  to hang or fail.
-- **Health monitoring** – `check_hang.py` periodically inspects output
-  files and terminates stuck runs.
-- **Node management helpers** – shell utilities such as
-  `get_healthy_nodes.sh`, `flush.sh`, and `local_rank.sh` select nodes,
+  to hang, fail, or emit NaN/Inf.
+- **Health monitoring** – `job_monitoring/check_hang.py` terminates a job
+  whose output files stop advancing, and `job_monitoring/check_nan.py`
+  terminates a job when NaN/Inf appears in its output.
+- **Node management helpers** – shell utilities in `utils/`
+  (`get_healthy_nodes.sh`, `flush.sh`, and `launcher.sh`) select nodes,
   clean residual processes, and configure MPI rank metadata.
-- **Batch workflow samples** – PBS scripts in
-  `qsub_multi_mpiexec.sc` and `qsub_multi_qsub.sc` illustrate two
-  strategies for recovering from failures on production systems.
+- **Batch workflow sample** – the PBS script `qsub_multi_mpiexec.sc`
+  illustrates recovering from failures by retrying on a healthy subset of
+  nodes within a single allocation.
 - **Reference documentation** – `docs/shell_scripts.md` explains the
   shell orchestration logic and includes sequence diagrams.
 
 The examples under `examples/` demonstrate how to vary parameters to
-exercise success, hang, fail, and resubmission scenarios.
+exercise success, hang, fail, and NaN scenarios.
 
 ## 2. Prerequisites
 
@@ -44,8 +45,8 @@ exercise success, hang, fail, and resubmission scenarios.
 1. Clone the repository on your login node or workstation:
 
    ```bash
-   git clone https://github.com/argonne-lcf/checkpoint_restart.git
-   cd checkpoint_restart
+   git clone https://github.com/argonne-lcf/checkmate.git
+   cd checkmate
    ```
 
 2. Optional: create an isolated Python environment.
@@ -55,17 +56,12 @@ exercise success, hang, fail, and resubmission scenarios.
    source .venv/bin/activate
    ```
 
-3. Ensure `test_pyjob.py` and `check_hang.py` are executable:
+3. Install the package. This places `check_hang.py`, `check_nan.py`,
+   `get_healthy_nodes.sh`, `launcher.sh`, and `flush.sh` on your `PATH`,
+   which is how the submission scripts invoke them:
 
    ```bash
-   chmod +x test_pyjob.py check_hang.py
-   ```
-
-4. Add the repository to your `PATH` if you plan to invoke helpers
-   from other working directories:
-
-   ```bash
-   export PATH="$(pwd):$PATH"
+   pip install -e .
    ```
 
 ## 4. Running the synthetic workload locally
@@ -99,19 +95,30 @@ python test_pyjob.py --compute 1 --niters 10 --checkpoint state.chk
 
 ## 5. Monitoring runs for hangs
 
-`check_hang.py` watches one or more output files and terminates a job if
-no updates occur within the timeout window.
+`check_hang.py` watches one or more output files and, if none of them are
+modified within the timeout window, runs a kill command to terminate the
+workload. It does not launch the workload itself — start it in the
+background alongside the job.
 
 ```bash
-check_hang.py --timeout 300 --check 10 --command python --output demo.log
+check_hang.py --timeout 300 --check 10 \
+    --outputs output.log --kill-command "pkill -u $USER python ./test_pyjob.py"
 ```
 
-- `--timeout` – Seconds since the last file modification before the
-  job is deemed hung.
-- `--check` – Polling interval in seconds.
-- `--command` – Process name or prefix passed to `pkill` when
-  cancellation is required.
-- `--output` – Colon-separated list of files to monitor.
+- `--timeout` – Seconds since the last file modification before the job is
+  deemed hung (default: 300).
+- `--check` – Seconds between file-activity checks (default: 5).
+- `--outputs` – Colon-separated list of output files to watch
+  (default: `chkpt/latest`).
+- `--kill-command` – Shell command run to terminate the job
+  (default: `pkill -u $USER mpiexec`).
+- `--grace` – Seconds to wait after issuing the kill command before
+  exiting (default: 10).
+- `--dry-run` – Log the kill action without executing it.
+
+To also guard against numerical blow-ups, run `check_nan.py` in parallel;
+it terminates the job when `NaN`/`Inf` appears in the watched files
+(e.g. `check_nan.py --outputs output.log --check 1 --kill-command "qdel $PBS_JOBID"`).
 
 On batch systems, launch the monitor in the background so it can run
 concurrently with the workload.
@@ -135,7 +142,7 @@ cluster.
 2. **Cleaning up residual processes**
 
    ```bash
-   PBS_NODEFILE=nodefile_all ./flush.sh
+   PBS_NODEFILE=nodefile_all flush.sh
    ```
 
    The script removes processes associated with your user on all nodes
@@ -143,42 +150,34 @@ cluster.
 
 3. **Configuring rank metadata**
 
-   Wrap MPI launch commands with `local_rank.sh` to populate
-   environment variables (`RANK`, `LOCAL_RANK`, `WORLD_SIZE`, and
-   rendezvous coordinates) for downstream applications:
+   Wrap MPI launch commands with `launcher.sh` to export the rank
+   variables (`RANK`, `LOCAL_RANK`, and `WORLD_SIZE`) that downstream
+   applications read. It derives these from the PALS/PMIx environment and
+   execs the command that follows it:
 
    ```bash
-   mpiexec -np 8 --ppn 8 ./local_rank.sh python test_pyjob.py ...
+   mpiexec -np 8 --ppn 8 launcher.sh python test_pyjob.py ...
    ```
 
-## 7. Batch scheduling workflows
+## 7. Batch scheduling workflow
 
-Two PBS scripts illustrate how to maintain progress when runs fail or
-hang.  Adapt the directives (`#PBS` lines), module loads, and paths to
-match your site.
-
-### 7.1 Iterative mpiexec retries (`qsub_multi_mpiexec.sc`)
+`qsub_multi_mpiexec.sc` illustrates how to maintain progress when runs
+fail or hang, by retrying within a single allocation.  Adapt the
+directives (`#PBS` lines), module loads, and paths to match your site.
 
 1. Copy the script and update the account, queue, and wall clock limit.
 2. Adjust `JOBSIZE` (nodes per attempt), `MAX_TRIALS`, and workload
    parameters.
 3. Submit the script with `qsub qsub_multi_mpiexec.sc`.
-4. The workflow performs the following loop:
-   - Select a subset of nodes with `get_healthy_nodes.sh`.
+4. The workflow performs the following loop up to `MAX_TRIALS` times:
+   - Select a subset of healthy nodes with `get_healthy_nodes.sh`.
    - Start `check_hang.py` in the background.
-   - Launch the MPI job with `mpiexec` and `local_rank.sh`.
-   - If the job fails, clean the nodes with `flush.sh` and retry until
-     success or `MAX_TRIALS` is reached.
+   - Launch the MPI job with `mpiexec ... launcher.sh python ./test_pyjob.py`.
+   - On success, break; on failure, stop the monitor (`pkill
+     check_hang.py`), clean the nodes with `flush.sh`, and retry.
 
-### 7.2 Self-resubmitting job (`qsub_multi_qsub.sc`)
-
-This alternative resubmits itself via `qsub` whenever the job exits
-unsuccessfully.
-
-1. Update resource directives as before.
-2. Submit the script once with `qsub qsub_multi_qsub.sc`.
-3. Upon failure, the script re-queues itself, ensuring the monitor and
-   cleanup steps run before each attempt.
+The `examples/nan/qsub.sc` variant follows the same pattern but also runs
+`check_nan.py` in the background to catch numerical failures.
 
 ## 8. Example scenarios
 
@@ -188,20 +187,31 @@ new experiments.
 
 - `examples/fail` – A job that exits after a configured runtime.
 - `examples/hang` – Demonstrates detection and cleanup of hung jobs.
-- `examples/resub` – Shows self-resubmission behavior.
+- `examples/nan` – Detects NaN/Inf in the output and restarts.
 - `examples/success` – A control scenario with a clean run.
 
 ## 9. Optimizing checkpoint intervals
 
-`optimal_checkpointing.py` estimates how frequently to checkpoint based
-on hardware characteristics.  Run it with:
+`utils/optimal_checkpointing.py` provides the function
+`optimal_checkpoint_cadence(...)`, which solves an updated form of Eq. (21)
+of Daly (2006) to return the recommended computation interval (in hours)
+between checkpoints. It is imported and called rather than run as a CLI:
 
-```bash
-python optimal_checkpointing.py --help
+```python
+from utils.optimal_checkpointing import optimal_checkpoint_cadence
+
+# node_count nodes, node_memory GB checkpointed per node
+interval_hours = optimal_checkpoint_cadence(
+    node_count=1024,
+    node_memory=100.0,
+    chkpt_bandwidth="DAOS-128",  # or "LUSTRE", or a float in GB/s
+)
 ```
 
-Provide the desired node count, memory footprint, checkpoint bandwidth,
-and failure rate to compute recommended intervals.
+Key parameters: `node_count`, `node_memory` (GB per node to checkpoint),
+`chkpt_bandwidth` (`"DAOS-128"`, `"LUSTRE"`, or a GB/s float), and either
+`MTBAI` (mean time between application interrupts, hours) or `R_0`
+(failure rate in failures/node-hr, which overrides `MTBAI`).
 
 ## 10. Next steps
 
