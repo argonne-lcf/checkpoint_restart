@@ -1,13 +1,14 @@
 # Utilities
 
-This folder contains helper scripts and microkernel assets used by checkpoint/restart workflows.
+This folder contains the microkernel assets used by checkpoint/restart
+workflows for node/communication health checks.
 
-## Top-level scripts
+The former top-level helper scripts now ship inside the `check_mate` package:
 
-- `get_healthy_nodes.sh`: Select reachable nodes from an allocation and write a filtered nodefile.
-- `launcher.sh`: Launch helper script for multi-step runs.
-- `flush.sh`: Cleanup helper for allocated nodes.
-- `optimal_checkpointing.py`: Utility to estimate checkpoint interval tradeoffs.
+- `get_healthy_nodes.sh`, `launcher.sh`, `flush.sh` live in
+  `src/check_mate/resources/` (exposed via the `check-mate` CLI).
+- `optimal_checkpointing.py` is now the `check_mate.optimal_checkpointing`
+  module.
 
 ## `check_healthy_tests/`
 

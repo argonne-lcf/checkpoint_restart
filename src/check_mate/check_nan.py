@@ -1,23 +1,7 @@
-#!/usr/bin/env python3
-"""
-check_nan.py — Monitor text output files for NaN/Inf and terminate a job if found.
+"""Command-line utility for detecting NaN/Inf tokens in log files."""
 
-Typical usage examples:
-  # Scan multiple outputs (colon- or comma-separated), every 15s; on detection run a PBS kill command
-  python check_nan.py --outputs "logs/job.out:logs/job.err,output.log" --check 15 \
-      --kill-command "qdel $PBS_JOBID"
+from __future__ import annotations
 
-  # Scan recursively via glob; send SIGTERM to a PID on detection (then SIGKILL after grace)
-  python check_nan.py --outputs "runs/**/stdout.txt" --recursive \
-      --pid 123456 --signal TERM --grace 20
-
-Notes:
-- You can pass **colon or comma separated** file specs to --outputs. Each spec may be
-  a literal file path or a glob pattern (supports ** when --recursive is used).
-- This script treats any case-insensitive occurrence of the tokens `nan` or `inf`
-  as problematic (configurable via --include-inf). It reads files incrementally to
-  avoid re-scanning from the beginning on each poll.
-"""
 import argparse
 import glob
 import os
@@ -27,7 +11,18 @@ import subprocess
 import sys
 import time
 from datetime import datetime
-from typing import Dict, Tuple, List
+try:
+    import ezpz
+    logger = ezpz.get_logger(__name__)
+except Exception:
+    import logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='[%(asctime)s][%(levelname)s][%(name)s] - %(message)s',
+    )
+    logger = logging.getLogger(__name__)
+    logger.setLevel("INFO")
+
 
 # --- Regex helpers -----------------------------------------------------------
 NAN_RE = re.compile(r"(?<![A-Za-z0-9_])nan(?![A-Za-z0-9_])", re.IGNORECASE)
@@ -35,21 +30,26 @@ INF_RE = re.compile(r"(?<![A-Za-z0-9_])inf(?![A-Za-z0-9_])", re.IGNORECASE)
 
 # --- Helpers ----------------------------------------------------------------
 
+
 def now() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def vprint(verbose: bool, *msg):
     if verbose:
-        print(f"[{now()}]", *msg, flush=True)
+        logger.info(*msg)
+        # logger.info(f"[{now()}]", *msg, flush=True)
 
 
-def split_outputs(outputs: str) -> List[str]:
+def split_outputs(outputs: str) -> list[str]:
     """Split --outputs string by ':' and ',' into a list of specs, stripping blanks."""
     if not outputs:
         return []
-    specs: List[str] = []
-    for part in outputs.replace(",", ":").split(":"):
+    specs: list[str] = []
+    # to_watch = args.outputs.split(" ")
+    to_watch = outputs.replace(",", ":").replace(" ", ":").split(":")
+    logger.info(f"Watching {to_watch}")
+    for part in to_watch:
         part = part.strip()
         if part:
             specs.append(part)
@@ -60,11 +60,11 @@ def is_glob(spec: str) -> bool:
     return any(ch in spec for ch in ["*", "?", "["])
 
 
-def list_files(specs: List[str], recursive: bool) -> Dict[str, int]:
+def list_files(specs: list[str], recursive: bool) -> dict[str, int]:
     """Resolve a list of file specs (globs or literal paths) to existing files -> size."""
-    files: Dict[str, int] = {}
+    files: dict[str, int] = {}
     for spec in specs:
-        matched: List[str]
+        matched: list[str]
         if is_glob(spec):
             matched = glob.glob(spec, recursive=recursive)
         else:
@@ -82,7 +82,7 @@ def list_files(specs: List[str], recursive: bool) -> Dict[str, int]:
     return files
 
 
-def scan_new_bytes(path: str, start: int) -> Tuple[int, str]:
+def scan_new_bytes(path: str, start: int) -> tuple[int, str]:
     """Read text from a file starting at offset `start` and return (new_end, text)."""
     try:
         size = os.path.getsize(path)
@@ -108,10 +108,11 @@ def contains_bad_tokens(text: str, include_inf: bool) -> bool:
 
 # --- Kill / Termination actions ---------------------------------------------
 
+
 def try_kill(args: argparse.Namespace) -> None:
     """Attempt to terminate the job/process according to flags."""
     if args.dry_run:
-        print("[DRY-RUN] Would terminate job (skipping actual kill).", flush=True)
+        logger.info("[DRY-RUN] Would terminate job (skipping actual kill).")
         return
 
     did_something = False
@@ -119,16 +120,16 @@ def try_kill(args: argparse.Namespace) -> None:
     # 1) PID signaling
     if args.pid:
         sig = getattr(signal, f"SIG{args.signal}")
-        print(f"Sending SIG{args.signal} to PID {args.pid}", flush=True)
+        logger.info(f"Sending SIG{args.signal} to PID {args.pid}")
         try:
             os.kill(args.pid, sig)
             did_something = True
         except ProcessLookupError:
-            print(f"[WARN] PID {args.pid} does not exist.", flush=True)
+            logger.warning(f"[WARN] PID {args.pid} does not exist.")
         except PermissionError as e:
-            print(f"[ERROR] No permission to signal PID {args.pid}: {e}", flush=True)
+            logger.error(f"[ERROR] No permission to signal PID {args.pid}: {e}")
         except Exception as e:
-            print(f"[ERROR] Failed to signal PID {args.pid}: {e}", flush=True)
+            logger.error(f"[ERROR] Failed to signal PID {args.pid}: {e}")
 
         # Optional escalation to SIGKILL
         if args.grace > 0 and sig != signal.SIGKILL:
@@ -138,26 +139,27 @@ def try_kill(args: argparse.Namespace) -> None:
             except ProcessLookupError:
                 pass  # process is gone
             else:
-                print(f"Escalating to SIGKILL for PID {args.pid}", flush=True)
+                logger.info(f"Escalating to SIGKILL for PID {args.pid}")
                 try:
                     os.kill(args.pid, signal.SIGKILL)
                 except Exception as e:
-                    print(f"[ERROR] SIGKILL failed for PID {args.pid}: {e}", flush=True)
+                    logger.error(f"[ERROR] SIGKILL failed for PID {args.pid}: {e}")
 
     # 2) Arbitrary kill command (works for PBS, etc.)
     if args.kill_command:
-        print(f"Running kill command: {args.kill_command}", flush=True)
+        logger.info(f"Running kill command: {args.kill_command}")
         try:
             subprocess.run(args.kill_command, shell=True, check=False)
             did_something = True
         except Exception as e:
-            print(f"[ERROR] Kill command failed: {e}", flush=True)
+            logger.error(f"[ERROR] Kill command failed: {e}")
 
     if not did_something:
-        print("[WARN] No kill action executed (provide --pid or --kill-command).", flush=True)
+        logger.warning("[WARN] No kill action executed (provide --pid or --kill-command).")
 
 
 # --- CLI / Main --------------------------------------------------------------
+
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
@@ -238,21 +240,18 @@ def main() -> int:
     specs = split_outputs(args.outputs)
 
     if not specs:
-        print("[ERROR] No valid --outputs provided.", flush=True)
+        logger.error("[ERROR] No valid --outputs provided.")
         return 3
 
-    print(
-        f"[{now()}] Monitoring for NaN{'/Inf' if args.include_inf else ''} in: {', '.join(specs)}",
-        flush=True,
-    )
+    logger.info(f"Monitoring for NaN{'/Inf' if args.include_inf else ''} in: {', '.join(specs)}")
 
-    offsets: Dict[str, int] = {}
+    offsets: dict[str, int] = {}
     first_seen = time.time()
 
     while True:
         # Timeout condition (optional)
         if args.timeout and (time.time() - first_seen) >= args.timeout:
-            print(f"[{now()}] Timeout reached ({args.timeout}s). No issues detected. Exiting.", flush=True)
+            logger.info(f"Timeout reached ({args.timeout}s). No issues detected. Exiting.")
             return 0
 
         # Discover files and initialize offsets for new files
@@ -275,7 +274,7 @@ def main() -> int:
                 continue
 
             if contains_bad_tokens(chunk, include_inf=args.include_inf):
-                print(f"[{now()}] Detected NaN{'/Inf' if args.include_inf else ''} in {path}.", flush=True)
+                logger.info(f"Detected NaN{'/Inf' if args.include_inf else ''} in {path}.")
                 try_kill(args)
                 return 2
 
@@ -287,5 +286,5 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except KeyboardInterrupt:
-        print(f"[{now()}] Interrupted by user.")
+        logger.info("Interrupted by user.")
         sys.exit(130)

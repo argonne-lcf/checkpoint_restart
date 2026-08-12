@@ -1,7 +1,7 @@
 #!/bin/bash
 #PBS -l walltime=0:20:00
 #PBS -q prod
-#PBS -N test_nan
+#PBS -N test_success
 #PBS -l select=4
 #PBS -A datascience
 #PBS -l filesystems=home:flare
@@ -25,14 +25,14 @@ echo "Started running job at `date`"
 for RUN in `seq 1 $MAX_TRIALS`
 do
     # select a subset of nodes to run the job
-    get_healthy_nodes.sh $PBS_NODEFILE $JOBSIZE pbs_nodefile$RUN
+    check-mate get-healthy-nodes $PBS_NODEFILE $JOBSIZE pbs_nodefile$RUN
     export PBS_NODEFILE=pbs_nodefile$RUN
 
     # constantly check the job and kill the job if it hangs for 300 seconds
-    check_hang.py --timeout 300 --outputs $PBS_JOBNAME.o$JOBID:$PBS_JOBNAME.e$JOBID:output.log --kill-command "pkill -u $USER mpiexec" >> check_hang.r$JOBID &
-    check_nan.py --check 1 --outputs $PBS_JOBNAME.o$JOBID:$PBS_JOBNAME.e$JOBID:output.log --kill-command "pkill -u $USER mpiexec" >> check_nan.r$JOBID &
+    check-mate-hang --timeout 300 --outputs $PBS_JOBNAME.o$JOBID:$PBS_JOBNAME.e$JOBID:output.log --kill-command "pkill -u $USER python -m check_mate.test" >> check_hang.r$JOBID &
+
     # run the actual job, in this case, the job will run for 200 seconds and fail (finished about 9 iterations each time)
-    mpiexec -np $((JOBSIZE*12)) --ppn 12 launcher.sh python ./test_pyjob.py --compute 5 --niters 100 --output output.log --nan-after 10
+    mpiexec -np $((JOBSIZE*12)) --ppn 12 check-mate launcher python -m check_mate.test --compute 10 --niters 100 --output output.log
 
     EXIT_CODE=$?
     # Check the job status
@@ -42,16 +42,10 @@ do
         echo "Job run successfully"
         break
     fi
-
-    # rename the output file
-    mv output.log output.log.$(date +"%y-%m-%d-%H-%M-%S")
-    # clean up checkpoint data that has NaN
-    # ......
-    
     echo "Rerun the job at `date`; time of trials: $RUN"
     # clear up the nodes for rerun the job
-    pkill -u $USER python
-    PBS_NODEFILE=nodefile_all flush.sh
+    pkill check-mate-hang
+    PBS_NODEFILE=nodefile_all check-mate flush
     sleep 5
 done
 

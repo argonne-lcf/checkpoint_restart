@@ -1,32 +1,38 @@
-#!/usr/bin/env python3
-"""
-Monitor one or more output files for recent updates and kill a job if they
-stop changing for longer than a timeout.
+"""Command-line monitor for detecting stalled checkpoint files."""
 
-Examples:
-  python check_hang.py --outputs a.out:train.log --timeout 600 \
-    --check 10 --kill-command "pkill -u $USER python my_script.py"
-"""
+from __future__ import annotations
+
+
 import argparse
 import os
-import shlex
 import subprocess
-import sys
 import time
 from pathlib import Path
 from time import localtime, strftime
-from typing import List, Optional
+from typing import Optional
 
-__version__ = "0.2.0"
+from . import __version__
+
+try:
+    import ezpz
+    logger = ezpz.get_logger(__name__)
+except Exception:
+    import logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='[%(asctime)s][%(levelname)s][%(name)s] - %(message)s',
+    )
+    logger = logging.getLogger(__name__)
+    logger.setLevel("INFO")
 
 
 def get_date(etime: float) -> str:
     return strftime("%Y-%m-%d %H:%M:%S", localtime(etime))
 
 
-def most_recent_mtime(paths: List[Path]) -> Optional[float]:
+def most_recent_mtime(paths: list[Path]) -> Optional[float]:
     """Return the most recent mtime among existing paths; None if none exist."""
-    mtimes: List[float] = []
+    mtimes: list[float] = []
     for p in paths:
         try:
             if p.exists():
@@ -59,14 +65,14 @@ def main():
         dest="kill_command",
         default="pkill -u $USER mpiexec",
         type=str,
-        help="Shell command to terminate the job (e.g., 'pkill -u $USER mpiexec'). "
+        help="Shell command to terminate the job (e.g., 'pkill -u $USER mpiexec'). ",
     )
     parser.add_argument(
         "--outputs",
         dest="outputs",
         default="chkpt/latest",
         type=str,
-        help="Colon-separated list of output files to watch (e.g., 'a.out:train.log').",
+        help="Colon- (or comma/space-) separated output files to watch (e.g., 'a.out:train.log').",
     )
     parser.add_argument(
         "--grace",
@@ -82,11 +88,15 @@ def main():
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     args = parser.parse_args()
+    logger.info(f"Args:\n{args}")
 
     # Deduplicate while preserving order
     _seen = set()
     files = []
-    for part in args.outputs.split(":"):
+    # Accept colon/comma/space-separated lists (matches --outputs help).
+    to_watch = args.outputs.replace(",", ":").replace(" ", ":").split(":")
+    logger.info(f"Watching {to_watch}")
+    for part in to_watch:
         part = part.strip()
         if not part:
             continue
@@ -101,9 +111,9 @@ def main():
         last_change = time.time()
     last_report = 0.0
 
-    print(f"[{get_date(time.time())}] Job monitor started")
-    print(f"Watching: {', '.join(str(p) for p in files) if files else '(none)'}")
-    print(f"Timeout: {args.timeout}s | Check interval: {args.check}s")
+    logger.info("Job monitor started")
+    logger.info(f"Watching: {', '.join(str(p) for p in files) if files else '(none)'}")
+    logger.info(f"Timeout: {args.timeout}s | Check interval: {args.check}s")
 
     proc = None
 
@@ -115,8 +125,8 @@ def main():
                 # Poll the process to see if it has exited
                 proc.poll()
                 if proc.returncode is not None:
-                    print(
-                        f"[{get_date(time.time())}] Monitored command exited with "
+                    logger.info(
+                        f"Monitored command exited with "
                         f"return code {proc.returncode}. Exiting monitor."
                     )
                     break
@@ -132,57 +142,58 @@ def main():
 
             # Periodic status line (not every loop)
             if now - last_report >= max(5, args.check):
-                print(
-                    f"\n[{get_date(now)}] Checking job status\n"
-                    + (
-                        f"Most recent change among {args.outputs} at {get_date(last_change)}\n"
-                        if any(p.exists() for p in files)
-                        else f"None of the watched files exist yet; monitoring...\n"
-                    )
-                    + f"Job has been running for {runtime:.1f} seconds\n"
-                    + f"No updates for {idle:.1f} seconds"
-                )
                 last_report = now
+                if not any(p.exists() for p in files):
+                    logger.info("None of the watched files exist yet; monitoring...")
+                else:
+                    job_metrics = {
+                        "now": get_date(now),
+                        "last_change": get_date(last_change),
+                        "runtime_s": f"{runtime:.1f}",
+                        "idle_s": f"{idle:.1f}",
+                    }
+                    metrics_str = " ".join(f"{k}={v}" for k, v in job_metrics.items())
+                    logger.info(metrics_str)
 
             if idle >= args.timeout:
-                print(
+                logger.info(
                     f"[{get_date(now)}] Output has not been updated for {idle:.1f} seconds. "
                     f"Issuing kill command..."
                 )
                 if not args.dry_run:
                     try:
                         if proc:
-                            print(f"Killing monitored process (PID: {proc.pid})")
+                            logger.info(f"Killing monitored process (PID: {proc.pid})")
                             proc.kill()
                         else:
-                            print(f"Executing kill command: {args.kill_command}")
+                            logger.info(f"Executing kill command: {args.kill_command}")
                             # Use shell so "$USER" env var works in defaults
                             subprocess.run(args.kill_command, shell=True, check=True)
 
                         if args.grace > 0:
-                            print(f"Waiting {args.grace}s grace period before exit...")
+                            logger.info(f"Waiting {args.grace}s grace period before exit...")
                             time.sleep(args.grace)
                     except Exception as e:
-                        print(f"Failed to execute kill command: {e}", file=sys.stderr)
+                        logger.error(f"Failed to execute kill command: {e}")
                 else:
-                    print("(dry-run) Skipping kill execution")
+                    logger.info("(dry-run) Skipping kill execution")
 
-                print(f"[{get_date(time.time())}] Monitor exiting after inactivity timeout.")
+                logger.info(f"Monitor exiting after inactivity timeout.")
                 break
     except KeyboardInterrupt:
-        print(f"\n[{get_date(time.time())}] Monitor interrupted by user. Exiting.")
+        logger.info("Monitor interrupted by user. Exiting.")
         if proc and proc.returncode is None:
-            print("Attempting to terminate the monitored command...")
+            logger.info("Attempting to terminate the monitored command...")
             proc.terminate()
             try:
                 proc.wait(timeout=args.grace)
-                print("Command terminated.")
+                logger.info("Command terminated.")
             except subprocess.TimeoutExpired:
-                print("Command did not terminate gracefully. Forcing kill.")
+                logger.info("Command did not terminate gracefully. Forcing kill.")
                 proc.kill()
     finally:
         if proc and proc.returncode is None:
-            print("Ensuring monitored process is terminated before exit.")
+            logger.info("Ensuring monitored process is terminated before exit.")
             proc.kill()
 
 

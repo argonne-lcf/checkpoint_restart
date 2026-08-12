@@ -1,0 +1,23 @@
+site_name: Check Mate
+site_url: https://example.com/check-mate
+repo_url: https://github.com/argonne-lcf/checkpoint_restart
+site_description: "Documentation for the Check Mate checkpoint/restart helpers"
+theme:
+  name: material
+  palette:
+    scheme: default
+    primary: indigo
+    accent: amber
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - CLI reference: cli.md
+  - Python API: python-api.md
+  - Workflow recipes: workflows.md
+plugins:
+  - search
+markdown_extensions:
+  - admonition
+  - codehilite
+  - toc:
+      permalink: true
