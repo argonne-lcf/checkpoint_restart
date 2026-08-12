@@ -44,7 +44,7 @@ Verify your installation and inspect the shipped version:
 $ check-mate --version
 check-mate 0.1.0
 ```
-The wheel installs the `check-mate`, `check-mate-hang`, `check-mate-nan`, `check-mate get-healthy-nodes`, `check-mate launcher`, and `check-mate flush` entry points that are covered in the [CLI reference](docs/cli.md).
+The wheel installs the `check-mate`, `check-mate-hang`, and `check-mate-nan` console entry points. The `check-mate` dispatcher additionally exposes the `get-healthy-nodes`, `launcher`, and `flush` subcommands (invoked as `check-mate <subcommand>`). All are covered in the [CLI reference](docs/cli.md).
 
 ## Running the test suite
 

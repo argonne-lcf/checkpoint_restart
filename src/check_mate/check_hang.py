@@ -140,6 +140,7 @@ def main():
 
             # Periodic status line (not every loop)
             if now - last_report >= max(5, args.check):
+                last_report = now
                 if not any(p.exists() for p in files):
                     logger.info("None of the watched files exist yet; monitoring...")
                 else:
@@ -151,7 +152,6 @@ def main():
                     }
                     metrics_str = " ".join(f"{k}={v}" for k, v in job_metrics.items())
                     logger.info(metrics_str)
-                    last_report = now
 
             if idle >= args.timeout:
                 logger.info(
