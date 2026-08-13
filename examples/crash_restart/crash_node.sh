@@ -19,13 +19,14 @@ HOST=$(hostname)
 HOST_SHORT=${HOST%%.*}
 CRASH_SHORT=${CRASH_NODE%%.*}
 
-if [[ -n "${CRASH_NODE:-}" && "$HOST_SHORT" == "$CRASH_SHORT" && "${RUN:-}" == "${CRASH_ON_TRIAL:-}" ]]; then
+if [[ -n "$CRASH_NODE" && "$HOST_SHORT" == "$CRASH_SHORT" && "$RUN" == "$CRASH_ON_TRIAL" ]]; then
     sleep ${CRASH_AFTER:-30}
     echo "CRASH-INJECT: simulating node failure on $HOST_SHORT (trial $RUN)" >&2
     # Record the nodefile spelling of the host, not `hostname`'s short form,
     # so get_healthy_nodes.sh can exclude it by exact string match.
+    # Leave the lock file in place. Deleting it can break the lock for a rank
+    # that is still using it, and duplicate lines here are harmless anyway.
     flock -x "$CRASHED_NODES_FILE.lock" -c "echo $CRASH_NODE >> $CRASHED_NODES_FILE"
-    rm -f "$CRASHED_NODES_FILE.lock" 2>/dev/null
     exit 42
 fi
 

@@ -148,12 +148,21 @@ python test_pyjob.py --fail 120 --checkpoint ./chkpt --niters 1000
   ```
 
 ## Example submission scripts
-- [qsub_multi_mpiexec.sc](./qsub_multi_mpiexec.sc)
-  submission script doing continual trials of mpiexec until success or timeout
+
+Start with `examples/crash_restart/`.
+
 - [examples/crash_restart/](./examples/crash_restart/)
   4-node job with a 50% reserve (6 nodes) that crashes one node on purpose and
-  restarts on a spare. Its README walks through converting an ordinary job
-  script into a fault-tolerant one.
+  restarts on a spare. Its README explains how to make an ordinary job script
+  fault tolerant, with sample output from a real run.
+- [qsub_multi_mpiexec.sc](./qsub_multi_mpiexec.sc)
+  the same restart loop without the crash injector. Use this one as a
+  production template.
+
+Both keep a pool of candidate nodes and retire only the nodes that actually
+failed, so one failure does not use up the whole reserve. The example adds a
+deliberate fault and writes its output outside the repository, which is why it
+is a test rather than a template.
 
 ### Spare-node pool across restarts
 

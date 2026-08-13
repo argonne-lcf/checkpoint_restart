@@ -11,7 +11,14 @@
 # e.g. JOBSIZE=4, RESERVE_PERCENT=20 -> overalloc.sh 4 20 -> select=5
 
 MAX_TRIALS=10
+
+# Resolve the repository from this script's own location, before any cd, so
+# the utilities that ship with it are used rather than an older installed
+# copy. conda.sh prepends the deployed installation to PATH, so the repository
+# has to be prepended after it is sourced.
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 source /flare/Aurora_deployment/AuroraGPT/soft/checkpoint_restart/conda.sh
+export PATH=$SCRIPT_DIR/utils:$SCRIPT_DIR/job_monitoring:$PATH
 
 IFS='.' read -ra ADDR <<< "$PBS_JOBID"
 export JOBID=$ADDR
@@ -73,9 +80,10 @@ do
         break
     fi
 
-    # Retire the nodes used by this failed trial, plus anything that failed the
-    # health check, so the next trial pulls fresh nodes from the spare pool.
-    cat pbs_nodefile$RUN pbs_nodefile$RUN.unhealthy 2>/dev/null | sort -u > retired_nodes$RUN
+    # Retire only the nodes that failed the health check. Nodes that were
+    # merely in use return to the pool: retiring an entire trial would drain a
+    # 5 node pool after a single 4 node attempt, leaving nothing for a restart.
+    cat pbs_nodefile$RUN.unhealthy 2>/dev/null | sort -u > retired_nodes$RUN
     grep -vxF -f retired_nodes$RUN nodefile_pool > nodefile_pool.next
     mv nodefile_pool.next nodefile_pool
     echo "Spare pool after trial $RUN: $(cat nodefile_pool | wc -l) nodes remain"
