@@ -59,8 +59,49 @@ This repository includes several scripts to help manage and monitor jobs. After 
 
 - `get_healthy_nodes.sh`: Selects a subset of healthy nodes from a larger allocation, writing them to a new nodefile. This is key to the restart mechanism.
   ```bash
-  get_healthy_nodes.sh NODEFILE NUM_NODES_TO_SELECT NEW_NODEFILE
+  get_healthy_nodes.sh NODEFILE NUM_NODES_TO_SELECT NEW_NODEFILE [EXCLUDE_FILE]
   ```
+  Alongside `NEW_NODEFILE`, three node lists are written:
+  - `NEW_NODEFILE.healthy`: all nodes that passed the health check
+  - `NEW_NODEFILE.unhealthy`: all nodes that failed the check, or were excluded
+  - `NEW_NODEFILE.free`: healthy nodes not selected for this run (spares)
+
+  The invariant is `healthy = selected + free`, so the remaining spare capacity
+  of an over-allocated job can be inspected at any point during the run.
+
+  The optional `EXCLUDE_FILE` lists nodes that must never be selected, which is
+  how a node that crashed an earlier trial is kept out of later ones.
+
+- `utils/overalloc.sh`: Computes how many nodes to request so that a job of
+  `JOBSIZE` nodes keeps a percentage of extra nodes as a spare pool for restarts.
+  ```bash
+  overalloc.sh JOBSIZE RESERVE_PERCENT
+  ```
+  `total = JOBSIZE + ceil(JOBSIZE * RESERVE_PERCENT / 100)`, and any non-zero
+  percentage reserves at least one spare node.
+
+  **This is a calculator, not an allocator.** PBS fixes the node count from the
+  `#PBS -l select=` directive before the job script runs, so no part of
+  checkpoint_restart can request additional nodes. The reserve must be included
+  in the submission by the user; the package then manages spares within the
+  allocation it is given. Run `overalloc.sh` before submitting and write the
+  result into the directive:
+  ```bash
+  #PBS -l select=6         # overalloc.sh 4 50 -> 6
+  export JOBSIZE=4
+  export RESERVE_PERCENT=50
+  ```
+  These three values are not derived from one another. Changing `JOBSIZE`
+  without changing `select=` yields a smaller reserve than intended. Both
+  submission scripts recompute the requirement at runtime and abort if the
+  allocation is short.
+  | JOBSIZE | reserve | request | spares |
+  |---------|---------|---------|--------|
+  | 4       | 50%     | 6       | 2      |
+  | 10      | 20%     | 12      | 2      |
+  | 16      | 25%     | 20      | 4      |
+  | 512     | 20%     | 615     | 103    |
+  | 10      | 0%      | 10      | 0      |
 
 - `utils/flush.sh`: A utility to clean up processes on allocated nodes, excluding the head node. This script is not installed via pip.
   ```bash
@@ -83,9 +124,103 @@ python test_pyjob.py --fail 120 --checkpoint ./chkpt --niters 1000
 ```
 
 
+- `node_usage_summary.sh`: Prints a high level node-usage report for a run:
+  which nodes ran work, when each entered and left service, how long each was
+  held, which crashed, and how much of the spare reserve was spent.
+  ```bash
+  node_usage_summary.sh [RUNDIR] [simple|full]    # RUNDIR defaults to $PWD
+  ```
+  Two levels, because a 1000 node job would otherwise bury the screen:
+  - `simple` (default): output size depends on the number of trials, not the
+    number of nodes. One line per trial, an outcome histogram, and a capped
+    list of crashed nodes. Measured at 31 lines for a 1000 node, 3 trial run
+    where `full` produced 3434.
+  - `full`: every trial and every node listed individually.
+
+  Counts are always exact; only the node *name* lists are capped. Raise the cap
+  with `NODE_SUMMARY_MAX_LIST=<n>`. The submission script prints `simple` to the
+  console and writes `full` to `node_usage_full.log` in the run directory, so
+  the detail is always kept.
+  Reads `node_usage.tsv`, a tab-separated ledger the submission script appends
+  to as nodes enter and leave service:
+  ```
+  trial <TAB> node <TAB> START|COMPLETED|STOPPED|CRASHED <TAB> timestamp <TAB> epoch
+  ```
+
 ## Example submission scripts
+
+Start with `examples/crash_restart/`.
+
+- [examples/crash_restart/](./examples/crash_restart/)
+  4-node job with a 50% reserve (6 nodes) that crashes one node on purpose and
+  restarts on a spare. Its README explains how to make an ordinary job script
+  fault tolerant, with sample output from a real run.
 - [qsub_multi_mpiexec.sc](./qsub_multi_mpiexec.sc)
-  submission script doing continual trials of mpiexec until success or timeout
+  the same restart loop without the crash injector. Use this one as a
+  production template.
+
+Both keep a pool of candidate nodes and retire only the nodes that actually
+failed, so one failure does not use up the whole reserve. The example adds a
+deliberate fault and writes its output outside the repository, which is why it
+is a test rather than a template.
+
+### Spare-node pool across restarts
+
+The submission script keeps a `nodefile_pool` of candidate nodes, separate from
+the per-trial nodefile handed to `mpiexec`. `PBS_NODEFILE` must **not** be
+pointed at the per-trial subset when selecting nodes: doing so shrinks the
+candidate pool to the nodes already in use and makes the spares unreachable on
+later trials.
+
+After a failed trial, only the nodes that actually died are retired:
+
+```bash
+cat crashed_nodes pbs_nodefile$RUN.unhealthy | sort -u > retired_nodes$RUN
+get_healthy_nodes.sh nodefile_pool $JOBSIZE pbs_nodefile$NEXT crashed_nodes
+```
+
+Retiring every node the failed trial *used* would drain the pool too fast: a
+4-node trial out of 6 would leave only 2 usable nodes and the next trial could
+not start. Retiring just the failed node keeps the healthy ones in rotation.
+
+When fewer than `JOBSIZE` usable nodes remain, `get_healthy_nodes.sh` exits 100
+and the loop stops early rather than spending the remaining trials on an
+allocation that can no longer host the job.
+
+### Run directory layout
+
+A run writes its own artifacts into one self-contained directory:
+
+```
+<rundir>/
+  run.log                    combined log for the whole job
+  nodefile_all               the full PBS allocation
+  nodefile_pool              candidate nodes, shrinks as nodes are retired
+  crashed_nodes              nodes that died, excluded from later trials
+  pbs_nodefile<N>            nodes used by trial N
+  pbs_nodefile<N>.healthy    health lists for trial N
+  pbs_nodefile<N>.unhealthy
+  pbs_nodefile<N>.free
+  retired_nodes<N>           cumulative retired set after trial N
+  node_usage.tsv             per-node ledger, one row per node per event
+  node_usage_full.log        full per-node usage summary
+  latest                     checkpoint (iteration number)
+  output.log                 job output
+  check_hang.log             hang-detector log
+```
+
+The location of `<rundir>` depends on the submission script:
+
+| Script | Run directory |
+|--------|---------------|
+| `qsub_multi_mpiexec.sc` | `$PBS_O_WORKDIR`, the directory the job was submitted from |
+| `examples/crash_restart/qsub.sc` | `tests/03-multi-node/results/batch-<jobid>/`, overridable with `TEST_ROOT` |
+
+The example writes outside the repository so that a test run leaves no artifacts
+in the tree under test.
+
+`get_healthy_nodes.sh` and `flush.sh` use `/tmp/$USER/pbs/` for node-local
+scratch; only the run's own artifacts are written to `<rundir>`.
 
 ## System Monitoring
 - [system_monitoring/README.md](./system_monitoring/README.md)

@@ -85,6 +85,10 @@ for i in range(checkpoint, args.niters):
             fout.flush()
         else:
             fout.write(f"{i} iteration ..., result: ...\n")
+            # Flush every iteration. check_hang.py decides whether the job is
+            # alive from this file's mtime, and a buffered write leaves the
+            # mtime unchanged, so an otherwise healthy job is killed as hung.
+            fout.flush()
 fout.close()    
 if rank==0:
     print(f"Job finished at {datetime.datetime.now()}")
