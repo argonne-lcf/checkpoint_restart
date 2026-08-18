@@ -1,0 +1,26 @@
+# Python requirements for the health-check microkernel tree.
+#
+# Install into a virtual environment; /usr/bin/python3 on Aurora is 3.6 and is
+# too old for the runner:
+#
+#   python3 -m venv ~/venvs/checkmate
+#   source ~/venvs/checkmate/bin/activate
+#   pip install -r requirements.txt
+#
+# Needed by system_monitoring/run_health_checks.py to parse health_checks.yaml.
+PyYAML>=5.4
+
+# Needed by src/collective/all_reduce_torch_xccl.py only.
+#
+# Do NOT pip install these on Aurora. torch, intel_extension_for_pytorch and
+# mpi4py must come from the site module, which provides builds matched to the
+# GPU driver and the MPI on the node:
+#
+#   module load frameworks
+#
+# A pip-installed torch will not see the XPU devices. Listed here for the
+# record, deliberately commented out.
+#
+# mpi4py
+# torch>=2.8
+# intel_extension_for_pytorch

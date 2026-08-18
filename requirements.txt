@@ -1,0 +1,11 @@
+# Runtime dependency of system_monitoring/run_health_checks.py.
+#
+# On Aurora the default login python3 (3.6) does not provide PyYAML. Use the
+# frameworks module for the Python runner:
+#
+#     module load frameworks    # Python 3.12 + PyYAML
+#
+# Do NOT load frameworks around the SYCL microkernels: it overrides the default
+# oneAPI runtime and the kernels abort with "No device of requested type
+# available" (SIGABRT, rc=134).
+PyYAML>=6.0
