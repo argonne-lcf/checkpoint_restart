@@ -1,3 +1,25 @@
+// flops.cpp -- peak FLOP rate via OpenMP target offload.
+//
+// Runs a dense chain of fused multiply-add operations with no memory traffic in
+// the inner loop, so the result is compute-bound and approaches the device
+// peak. Both single and double precision are measured.
+//
+// Each work item performs 128 iterations of MAD_16 (16 MADs, 2 flops each):
+//   workPerWI = 128 * 16 * 2 = 4096 flops
+//   gflops    = workPerWI * globalWI * world_size * 1e-9 / min_time
+//
+// The MAD_4/16/64 macros expand into straight-line dependent FMAs; the
+// dependency chain is deliberate, it stops the compiler from vectorising the
+// work away. Adapted from clpeak (https://github.com/krrishnarraj/clpeak/).
+//
+// The final assert(std::isfinite(Aptr[0])) guards against the whole chain
+// being optimised out or the device returning garbage.
+//
+// REQUIREMENTS  MPI, OpenMP offload to SPIR-V (-fiopenmp -fopenmp-targets=spir64).
+// USAGE         mpiexec -n <ranks> [--] gpu_tile_compact.sh ./flops
+// OUTPUT        "Single Precision Peak Flops: <v> GFlop/s" and the double
+//               precision equivalent, from rank 0.
+
 #undef MAD_4
 #undef MAD_16
 #undef MAD_64
@@ -28,10 +50,17 @@
 #include <omp.h>
 #include <vector>
 
+#include "rank_identity.hpp"
+
+#include "kernel_timer.hpp"
+
 template <typename T> void bench(std::string precision) {
   int world_size, world_rank;
   MPI_Comm_size(MPI_COMM_WORLD, &world_size);
   MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+  // Emit the rank -> host/tile map so a slow aggregate can be
+  // attributed to specific hardware.
+  health_checks::print_rank_identity("flops");
 
   const int64_t globalWI{20000000};
   const int num_iteration{100};
@@ -73,9 +102,13 @@ template <typename T> void bench(std::string precision) {
 }
 
 int main(int argc, char **argv) {
+  // Wall-clock for the whole kernel, reported as KERNEL_TIME.
+  health_checks::KernelTimer kernel_timer_("flops");
+
 
   MPI_Init(NULL, NULL);
   bench<float>("Single Precision Peak Flops");
   bench<double>("Double Precision Peak Flops");
+  kernel_timer_.report();
   MPI_Finalize();
 }

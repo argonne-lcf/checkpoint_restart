@@ -1,3 +1,47 @@
+// simple_injection_bisection.c -- MPI injection and bisection bandwidth.
+//
+// WHAT IT MEASURES
+//   injection  Every rank posts a nonblocking send to every other rank and a
+//              matching receive, then waits on all of them. The reported
+//              per-rank figure counts only bytes sent (one-way).
+//   bisection  Ranks are split in half; rank i pairs with rank i+n/2 and the
+//              pair exchanges simultaneously. The reported figure counts both
+//              directions (two-way).
+//   The final "non-blocking %" is bisection over injection: on a healthy
+//   fabric a full fat-tree approaches 100%, and a degraded or mis-cabled
+//   fabric drops well below it. That ratio is the health signal.
+//
+// WHY TWO IMPLEMENTATIONS
+//   This variant uses nonblocking Isend/Irecv with all requests in flight at
+//   once, so it will not deadlock at large rank counts and it saturates the
+//   NIC. full_injection_bisection.c uses blocking Sendrecv against one peer at
+//   a time; it is the more conservative pattern and is useful for isolating
+//   whether a problem is specific to concurrent traffic. Prefer this file for
+//   routine health checks.
+//
+// OUTPUT
+//   One line per rank, globally ordered by (hostname, rank) so that runs are
+//   diffable across jobs, followed by aggregates from rank 0. Ordering is
+//   enforced with a barrier per rank, which costs O(nprocs) barriers -- fine
+//   for health checks, not for large-scale benchmarking.
+//
+// USAGE
+//   mpiexec -n <ranks> simple_injection_bisection [options]
+//     --size <n>[k|m|g]  payload per message      (default 1m)
+//     --iters <n>        iterations               (default 100)
+//     --inject           injection only
+//     --bisection        bisection only
+//     --all              both (default)
+//
+// EXIT STATUS
+//   0 on completion. This kernel reports bandwidth; it does not itself decide
+//   pass/fail. Thresholding is the caller's job.
+//
+// MEMORY NOTE
+//   The injection phase allocates one receive buffer per peer, so each rank
+//   holds (nprocs-1) * size bytes. At 1 MiB and 24 ranks that is 23 MiB; at
+//   large --size values on many ranks this is the first thing to blow up.
+
 // inj_bis_ordered.c
 // Runs both injection and bisection by default (1 MiB).
 // Output is globally ordered: first by hostname (lexicographic), then by rank.
@@ -10,6 +54,8 @@
 #include <ctype.h>
 #include <stdarg.h>
 #include <unistd.h>
+
+#include "kernel_timer.h"
 
 #define DEFAULT_MSG_SIZE (1<<20)   // 1 MiB
 #define DEFAULT_NITERS   100
@@ -217,6 +263,10 @@ static void run_bisection_test(char *buf, int niters, size_t msg_size,
 
 // ---------------- Main ----------------
 int main(int argc, char *argv[]) {
+  /* Wall-clock for the whole kernel, reported as KERNEL_TIME. */
+  kernel_timer_t kernel_timer_;
+  kernel_timer_start(&kernel_timer_, "simple_injection_bisection");
+
     MPI_Init(&argc, &argv);
 
     // hostname for all prints
@@ -286,6 +336,7 @@ int main(int argc, char *argv[]) {
     free(buf);
     free(g_order);
     MPI_Comm_free(&nodecomm);
+    kernel_timer_report(&kernel_timer_);
     MPI_Finalize();
     return 0;
 }

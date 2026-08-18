@@ -1,3 +1,43 @@
+// mem_and_gpu_row.cpp -- one-line CPU and GPU memory inventory.
+//
+// Emits a single TSV or CSV row describing host memory (parsed from
+// /proc/meminfo) and Intel GPU memory (queried through Level Zero). Designed
+// to be run per node and concatenated, so a whole job's memory state is one
+// table.
+//
+// This is the only microkernel with no build-time GPU dependency: the Level
+// Zero loader is opened with dlopen at run time and every entry point is
+// resolved with dlsym. On a node with no GPU or no loader the GPU columns come
+// back zero and the process still exits 0.
+//
+// GPU QUERY, TWO PATHS
+//   Sysman  zesInit -> zesDriverGet -> zesDeviceGet -> zesDeviceEnumMemoryModules
+//           -> zesMemoryGetState. Reports both total and used. Preferred.
+//   Core    zeDeviceGetMemoryProperties. Reports total only; there is no used
+//           figure in the core API. Used when Sysman is unavailable.
+//   The core path scans the returned property struct for a plausible 64-bit
+//   size (1 GiB to 16 TiB) every 4 bytes rather than casting to a fixed struct
+//   layout, because that layout varies across Level Zero versions. It is
+//   deliberately tolerant, and it is why the core numbers should be treated as
+//   approximate.
+//
+// USAGE   mem_and_gpu_row [--csv] [--no-header] [--ze <path to libze_loader>]
+// OUTPUT  A header line (unless --no-header) and one data row.
+//
+// READING THE OUTPUT
+//   low mem_available_mib + high anon_lru_mib      real pressure from processes
+//   high filecache_* but mem_available_mib large   cache, not pressure
+//   sysman columns zero, core columns nonzero      Sysman disabled by policy
+//   all GPU columns zero                           non-GPU node, or no /dev/dri
+//
+// COLUMN NOTES
+//   mem_used_incl_cache_mib  MemTotal - MemFree; includes cache and buffers
+//   nonreclaim_est_mib       MemTotal - MemFree - Buffers - Cached - KReclaimable;
+//                            a heuristic for memory that will not free up
+//                            quickly under pressure
+//   Slab = SReclaimable + SUnreclaim, and KReclaimable already includes
+//   SReclaimable. Do not sum those columns together.
+
 // mem_and_gpu_row.cpp
 // One-line system summary (TSV/CSV): timestamp, hostname, CPU RAM buckets (MiB), Intel GPU memory.
 // Sysman path (zesInit->zesDriverGet->zesDeviceGet->zesMemoryGetState) for used/total,
@@ -75,6 +115,8 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+
+#include "kernel_timer.hpp"
 
 using namespace std;
 
@@ -366,6 +408,9 @@ static string csv_escape(const string& s){
 }
 
 int main(int argc, char** argv){
+  // Wall-clock for the whole kernel, reported as KERNEL_TIME.
+  health_checks::KernelTimer kernel_timer_("mem_and_gpu_row");
+
     ios::sync_with_stdio(false);
     cin.tie(nullptr);
 
@@ -445,5 +490,8 @@ int main(int argc, char** argv){
     }
     cout << "\n";
 
+    // Flush the row before the timer prints: cout and printf use separate
+    // buffers, and without this KERNEL_TIME appears before the CSV header.
+    cout.flush(); kernel_timer_.report();
     return 0;
 }

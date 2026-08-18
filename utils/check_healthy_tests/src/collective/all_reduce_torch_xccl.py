@@ -1,25 +1,52 @@
 #!/usr/bin/env python3
 
-# Queue : next-eval
-# module load frameworks
-# cd /lus/flare/projects/datascience/kaushik/FT/checkpoint_restart/utils/check_healthy_tests/pyt-collective
-# echo Jobid: $PBS_JOBID
-# echo Running on nodes `cat $PBS_NODEFILE`
-# NNODES=`wc -l < $PBS_NODEFILE`
-# RANKS_PER_NODE=12  
-# NRANKS=$(( NNODES * RANKS_PER_NODE ))
-# echo "NUM_OF_NODES=${NNODES}  TOTAL_NUM_RANKS=${NRANKS}  RANKS_PER_NODE=${RANKS_PER_NODE}"
-# CPU_BINDING1=list:4:9:14:19:20:25:56:61:66:71:74:79
-# export CCL_PROCESS_LAUNCHER=pmix  
-# export CCL_ATL_TRANSPORT=mpi
-# export CCL_KVS_MODE=mpi
-# export CCL_CONFIGURATION_PATH=""
-# export CCL_CONFIGURATION=cpu_gpu_dpcpp
-# export CCL_KVS_CONNECTION_TIMEOUT=600 
-# export CCL_KVS_USE_MPI_RANKS=1
-# export MPI_PROVIDER=$FI_PROVIDER
-
-# mpiexec --np ${NRANKS} -ppn ${RANKS_PER_NODE}  --cpu-bind  $CPU_BINDING1  python3 all_reduce_torch.py 1mb --iters 5
+# all_reduce_torch_xccl.py -- PyTorch distributed allreduce latency on Intel GPUs.
+#
+# Measures how long a collective takes across every GPU in the allocation using
+# the same software path a training job uses: torch.distributed over Intel's
+# XCCL/oneCCL backend on XPU devices. The three numbers reported per rank are
+#
+#   import_ms          time to import torch and IPEX (catches a slow or broken
+#                      module load / filesystem before it looks like a hang)
+#   init_ms            time to build the process group (catches rendezvous and
+#                      fabric problems)
+#   allreduce_p50_us   median allreduce latency (the actual health signal)
+#
+# An outlier rank in any of these columns identifies the node to drain. Rows
+# are printed ordered by (hostname, rank) so runs are diffable across jobs.
+#
+# BACKEND SELECTION
+#   torch >= 2.8 has XCCL built in and is used directly. Older torch falls back
+#   to the "ccl" backend, which additionally requires oneccl_bindings_for_pytorch.
+#   Rendezvous is env:// with rank 0's hostname as MASTER_ADDR, broadcast over
+#   MPI, so no external store is needed.
+#
+# REQUIREMENTS
+#   module load frameworks    (provides torch, IPEX and mpi4py matched to the
+#                              driver; a pip-installed torch will not see XPU)
+#   XPU must be available -- the script raises rather than silently falling
+#   back to CPU, because a CPU-path number is not a GPU health measurement.
+#
+# USAGE
+#   mpiexec -np ${NRANKS} -ppn 12 --cpu-bind ${CPU_BINDING} \
+#     python3 all_reduce_torch_xccl.py [size] [--iters N]
+#
+#   size    buffer per rank, accepts k/kb/m/mb/g/gb   (default 1mb)
+#   --iters iterations to time                        (default 2)
+#
+# ENVIRONMENT expected by the oneCCL path (set these in the job script):
+#   export CCL_PROCESS_LAUNCHER=pmix
+#   export CCL_ATL_TRANSPORT=mpi
+#   export CCL_KVS_MODE=mpi
+#   export CCL_CONFIGURATION_PATH=""
+#   export CCL_CONFIGURATION=cpu_gpu_dpcpp
+#   export CCL_KVS_CONNECTION_TIMEOUT=600
+#   export CCL_KVS_USE_MPI_RANKS=1
+#   export MPI_PROVIDER=$FI_PROVIDER
+#   CPU_BINDING=list:4:9:14:19:20:25:56:61:66:71:74:79
+#
+# OUTPUT  a torch_version line, a CSV header, then one CSV row per rank:
+#   timestamp,hostname,backend,buf_bytes,iters,import_ms,init_ms,allreduce_p50_us
 
 
 import os, sys, socket, datetime
@@ -29,7 +56,7 @@ from mpi4py import MPI
 
 # ----------------- tiny helpers -----------------
 def now_iso():
-    return datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S")
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
 
 def parse_size(s: str) -> int:
     s = s.strip().lower()

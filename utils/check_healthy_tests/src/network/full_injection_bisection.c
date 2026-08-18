@@ -1,3 +1,37 @@
+// full_injection_bisection.c -- MPI injection and bisection bandwidth
+//                               (blocking Sendrecv variant).
+//
+// This is the conservative counterpart to simple_injection_bisection.c. Each
+// rank walks its peers one at a time with a blocking MPI_Sendrecv rather than
+// putting every transfer in flight at once.
+//
+// WHEN TO USE THIS INSTEAD
+//   - to check whether a fabric problem only appears under concurrent traffic
+//     (this variant will often pass where the nonblocking one fails)
+//   - as a lower bound: the serialised peer loop cannot saturate the NIC, so
+//     the numbers here are expected to be lower and are not comparable with
+//     the nonblocking variant
+//
+// DIFFERENCES FROM THE NONBLOCKING VARIANT
+//   - injection counts bytes in BOTH directions (Sendrecv moves payload each
+//     way), so figures are roughly 2x the one-way number reported there
+//   - no non-blocking-percentage summary is produced
+//   - a single send buffer and a single receive buffer are reused, so memory
+//     is 2 * size regardless of rank count
+//
+// USAGE
+//   mpiexec -n <ranks> full_injection_bisection [options]
+//     --size <n>[k|m|g]  payload per message   (default 1m)
+//     --iters <n>        iterations            (default 100)
+//     injection          injection only        (positional, legacy spelling)
+//     bisection          bisection only        (positional, legacy spelling)
+//     --inject           injection only        (accepted for parity)
+//     --bisection        bisection only        (accepted for parity)
+//   With no mode argument both phases run.
+//
+// OUTPUT
+//   One line per rank ordered by (hostname, rank), then aggregates from rank 0.
+
 #include <mpi.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -5,6 +39,8 @@
 #include <ctype.h>
 #include <stdarg.h>
 #include <unistd.h>
+
+#include "kernel_timer.h"
 
 #define DEFAULT_MSG_SIZE (1<<20)   // 1 MB
 #define DEFAULT_NITERS   100
@@ -183,6 +219,10 @@ double run_bisection_test(char *sendbuf, char *recvbuf, int niters, size_t msg_s
 // Main
 // --------------------------------------------------
 int main(int argc, char *argv[]) {
+  /* Wall-clock for the whole kernel, reported as KERNEL_TIME. */
+  kernel_timer_t kernel_timer_;
+  kernel_timer_start(&kernel_timer_, "full_injection_bisection");
+
     MPI_Init(&argc, &argv);
 
     // hostname for all prints
@@ -214,10 +254,17 @@ int main(int argc, char *argv[]) {
             msg_size = parse_size(argv[++i]);
         } else if (strcmp(argv[i], "--iters") == 0 && i+1 < argc) {
             niters = parse_iters(argv[++i]);
-        } else if (strcmp(argv[i], "injection") == 0) {
+        } else if (strcmp(argv[i], "injection") == 0 ||
+                   strcmp(argv[i], "--inject") == 0) {
+            /* "injection" is the legacy positional spelling; "--inject"
+               matches simple_injection_bisection so callers can swap the two
+               binaries without rewriting the command line. */
             run_injection = 1; run_bisection = 0;
-        } else if (strcmp(argv[i], "bisection") == 0) {
+        } else if (strcmp(argv[i], "bisection") == 0 ||
+                   strcmp(argv[i], "--bisection") == 0) {
             run_injection = 0; run_bisection = 1;
+        } else if (strcmp(argv[i], "--all") == 0) {
+            run_injection = 1; run_bisection = 1;
         }
     }
 
@@ -247,6 +294,7 @@ int main(int argc, char *argv[]) {
     free(sendbuf);
     free(recvbuf);
     free(g_order);
+    kernel_timer_report(&kernel_timer_);
     MPI_Finalize();
     return 0;
 }

@@ -1,4 +1,22 @@
 #!/usr/bin/env python3
+# gen_mk_table.py -- turn microkernel log output into a markdown table.
+#
+# Reads a log containing both single-tile and full-node runs of the same
+# metric and emits a markdown table with a scaling column, so a node that is
+# not scaling across its tiles is visible at a glance.
+#
+# For each metric name it collects every matching line in file order and takes
+# the FIRST occurrence as the one-tile result and the LAST as the full-node
+# result -- which requires that run.sh emit them in that order. A metric that
+# appears fewer than two times is skipped silently.
+#
+# Values of 1000 or more are rescaled one unit upward (G -> T) for readability.
+#
+# USAGE   gen_mk_table.py <logfile> <micro|GEMM|FFT>
+#           micro  flops, triad, PCIe, tile/GPU peer bandwidth
+#           GEMM   the six GEMM precisions
+#           FFT    1D and 2D C2C transforms
+# OUTPUT  A markdown table on stdout: metric, one tile, full node, scaling.
 
 import sys
 import re

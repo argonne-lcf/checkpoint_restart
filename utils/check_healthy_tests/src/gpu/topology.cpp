@@ -1,3 +1,29 @@
+// topology.cpp -- Intel GPU fabric (Xe Link) topology discovery.
+//
+// Enumerates every GPU tile's fabric ports through Level Zero Sysman and
+// groups tiles into "planes" -- sets of tiles that are directly connected to
+// one another. Two tiles in the same plane have a direct link; two tiles in
+// different planes must route.
+//
+// HOW THE GROUPING WORKS
+//   Each port reports its own ID and the remote port ID it is attached to.
+//   Indexing tiles by both IDs makes every directly-linked pair collide in the
+//   same hash bucket, producing disjoint connection sets. Those sets are then
+//   merged transitively into planes, assuming a fully connected plane.
+//
+// TWO MODES
+//   no argument   print one line per plane, listing its "<device>.<subdevice>"
+//                 tiles -- use this to inspect the fabric by hand
+//   <index>       print the single tile ID at that position in the flattened
+//                 plane list -- this is the mode gpu_tile_plan_compact.sh uses
+//                 to turn a local MPI rank into a ZE_AFFINITY_MASK value, so
+//                 that paired ranks land on same-plane GPUs
+//
+// REQUIREMENTS  Level Zero headers and libze_loader. No MPI.
+// USAGE         ./topology            # print all planes
+//               ./topology 3          # tile ID for local rank 3
+// OUTPUT        Plane listing, or a single "<device>.<subdevice>" token.
+
 #include <cstdlib>
 #include <iostream>
 #include <level_zero/ze_api.h>
@@ -5,6 +31,8 @@
 #include <set>
 #include <unordered_map>
 #include <vector>
+
+#include "kernel_timer.hpp"
 
 template <> struct std::hash<zes_fabric_port_id_t> {
   std::size_t operator()(const zes_fabric_port_id_t &k) const {
@@ -26,6 +54,9 @@ bool operator==(const zes_fabric_port_id_t &lhs,
 // Without arguments print plane connectivity (groups of GPU Tile direcly
 // connected) Is argment X is passed, print the X Tiles.
 int main(int argc, char **argv) {
+  // Wall-clock for the whole kernel, reported as KERNEL_TIME.
+  health_checks::KernelTimer kernel_timer_("topology");
+
   zeInit(0);
 
   // Get devices

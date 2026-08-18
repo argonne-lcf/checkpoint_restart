@@ -1,3 +1,20 @@
+// fftc2c.cpp -- complex-to-complex FFT throughput via oneMKL.
+//
+// Two batched single-precision transforms, 100 repetitions each, best time
+// reported:
+//   1D  20,000 transforms of length 4096
+//   2D  10 transforms of 4096 x 4096
+//
+// The flop model is the standard 5*N*log2(N) per transform
+// (http://www.fftw.org/speed/method.html), scaled by batch count and ranks.
+//
+// The input buffer is refilled from host memory before every repetition, so
+// the timed region covers the transform only, not the upload.
+//
+// REQUIREMENTS  MPI, SYCL, oneMKL (-fsycl -qmkl). Needs MKLROOT set.
+// USAGE         mpiexec -n <ranks> [--] gpu_tile_compact.sh ./fftc2c
+// OUTPUT        "Single-precision FFT C2C 1D/2D: <v> GFlop/s" from rank 0.
+
 #include <complex>
 #include <mpi.h>
 #include <oneapi/mkl.hpp>
@@ -5,6 +22,10 @@
 #include <stdlib.h>
 #include <sycl/sycl.hpp>
 #include <sys/time.h>
+
+#include "rank_identity.hpp"
+
+#include "kernel_timer.hpp"
 
 typedef oneapi::mkl::dft::descriptor<oneapi::mkl::dft::precision::SINGLE,
                                      oneapi::mkl::dft::domain::COMPLEX>
@@ -56,6 +77,9 @@ void fft_c2c_batch_onemkl(descriptor_t *desc, int size, int howmany, std::string
   int world_size, world_rank;
   MPI_Comm_size(MPI_COMM_WORLD, &world_size);
   MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+  // Emit the rank -> host/tile map so a slow aggregate can be
+  // attributed to specific hardware.
+  health_checks::print_rank_identity("fftc2c");
 
   if (world_rank == 0) {
     // min_time is in nanseconds. Flop value is from http://www.fftw.org/speed/method.html
@@ -69,6 +93,9 @@ void fft_c2c_batch_onemkl(descriptor_t *desc, int size, int howmany, std::string
 }
 
 int main(int argc, char *argv[]) {
+  // Wall-clock for the whole kernel, reported as KERNEL_TIME.
+  health_checks::KernelTimer kernel_timer_("fftc2c");
+
 
   MPI_Init(&argc, &argv);
 
@@ -95,6 +122,7 @@ int main(int argc, char *argv[]) {
 
   fft_c2c_batch_onemkl(&desc_2d, size * size, howmany_2d, "Single-precision FFT C2C 2D");
 
+  kernel_timer_.report();
   MPI_Finalize();
   return 0;
 }

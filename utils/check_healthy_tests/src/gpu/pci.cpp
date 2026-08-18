@@ -1,3 +1,22 @@
+// pci.cpp -- host-to-device PCIe bandwidth via SYCL.
+//
+// Measures three transfer patterns over a 1 GiB buffer (2^28 ints), taking the
+// best of 10 iterations:
+//   H2D  host   -> device
+//   D2H  device -> host
+//   both concurrent H2D and D2H, which should approach the bidirectional link
+//        limit on a healthy PCIe Gen5 x16 slot
+//
+// Buffers are filled with a shuffled iota rather than a constant so that any
+// compression or zero-page optimisation in the path cannot inflate the result.
+//
+// REQUIREMENTS  MPI, SYCL (-fsycl).
+// USAGE         mpiexec -n <ranks> --cpu-bind list:1,2,3,4,5,6,52,53,54,55,56,57 \
+//                 -- gpu_tile_compact.sh ./pci
+//               CPU binding matters here: an unpinned rank can land on a NUMA
+//               node remote from its GPU and report a misleadingly low number.
+// OUTPUT        Three "PCIe ... Bandwidth: <v> GB/s" lines from rank 0.
+
 #include <cstdint>
 #include <limits>
 #include <mpi.h>
@@ -5,6 +24,10 @@
 #include <random>
 #include <sycl/sycl.hpp>
 #include <vector>
+
+#include "rank_identity.hpp"
+
+#include "kernel_timer.hpp"
 
 void fill_randomly(sycl::queue Q, int N, std::vector<int *> ptrs) {
   std::vector<int> v(N);
@@ -42,10 +65,16 @@ unsigned long datatransfer(sycl::queue Q, int N_byte, std::vector<std::pair<int 
 }
 
 int main() {
+  // Wall-clock for the whole kernel, reported as KERNEL_TIME.
+  health_checks::KernelTimer kernel_timer_("pci");
+
   MPI_Init(NULL, NULL);
   int world_size, world_rank;
   MPI_Comm_size(MPI_COMM_WORLD, &world_size);
   MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+  // Emit the rank -> host/tile map so a slow aggregate can be
+  // attributed to specific hardware.
+  health_checks::print_rank_identity("pci");
 
   sycl::queue Q;
   const int N = 1 << 28;
