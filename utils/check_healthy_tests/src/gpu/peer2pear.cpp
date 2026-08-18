@@ -126,4 +126,8 @@ int main(int argc, char *argv[]) {
     const double bitime_bw = (2L * N_byte * num_pair) / bitime;
     std::cout << mode << " Bidirectional Bandwidth: " << bitime_bw << " GB/s" << std::endl;
   }
+  // Report while MPI is still alive: the destructor's rank check
+  // falls back to "every process prints" once MPI has finalized.
+  kernel_timer_.report();
+  MPI_Finalize();
 }

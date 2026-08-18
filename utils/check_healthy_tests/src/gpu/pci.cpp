@@ -101,4 +101,8 @@ int main() {
     const double H2D_D2H_bw = (2L * N_byte * world_size) / H2D_D2H_time;
     std::cout << "PCIe Bidirectional Bandwidth: " << H2D_D2H_bw << " GB/s" << std::endl;
   }
+  // Report while MPI is still alive: the destructor's rank check
+  // falls back to "every process prints" once MPI has finalized.
+  kernel_timer_.report();
+  MPI_Finalize();
 }

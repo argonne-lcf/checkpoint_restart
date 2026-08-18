@@ -12,8 +12,10 @@
 // dependency chain is deliberate, it stops the compiler from vectorising the
 // work away. Adapted from clpeak (https://github.com/krrishnarraj/clpeak/).
 //
-// The final assert(std::isfinite(Aptr[0])) guards against the whole chain
-// being optimised out or the device returning garbage.
+// A strided isfinite() scan after the timed region guards against the whole
+// chain being optimised out or the device returning garbage. It is a plain if
+// rather than an assert: the default build is Release and -DNDEBUG would
+// remove an assert, leaving the kernel with no validation at all.
 //
 // REQUIREMENTS  MPI, OpenMP offload to SPIR-V (-fiopenmp -fopenmp-targets=spir64).
 // USAGE         mpiexec -n <ranks> [--] gpu_tile_compact.sh ./flops
@@ -47,6 +49,7 @@
 #include <iostream>
 #include <limits>
 #include <mpi.h>
+#include <sstream>
 #include <omp.h>
 #include <vector>
 
@@ -93,7 +96,34 @@ template <typename T> void bench(std::string precision) {
     min_time = std::min(time, min_time);
   }
 #pragma omp target exit data map(from : Aptr[0 : globalWI])
-  assert(std::isfinite(Aptr[0]));
+  // Validation must survive the Release build: assert() is removed by
+  // -DNDEBUG, which is on the default compile line. Checking Aptr[0] alone
+  // would also miss a tile that corrupts only part of its range, so this
+  // samples across the whole buffer. It runs after the timed region.
+  const int64_t kValidateStride = 4096;
+  long nonfinite = 0;
+  int64_t first_bad = -1;
+  for (int64_t i = 0; i < globalWI; i += kValidateStride) {
+    if (!std::isfinite(Aptr[i])) {
+      if (first_bad < 0)
+        first_bad = i;
+      nonfinite++;
+    }
+  }
+
+  if (nonfinite > 0) {
+    const long checked = (globalWI + kValidateStride - 1) / kValidateStride;
+    // One write, not one per field: every rank shares this stderr, and
+    // per-field writes interleave into unreadable lines.
+    std::ostringstream msg;
+    msg << "VALIDATION FAILED flops " << precision << " rank=" << world_rank
+        << " host=" << health_checks::rank_host()
+        << " tile=" << health_checks::rank_tile()
+        << " nonfinite=" << nonfinite << "/" << checked
+        << " first_index=" << first_bad << "\n";
+    std::cerr << msg.str() << std::flush;
+    MPI_Abort(MPI_COMM_WORLD, 3);
+  }
 
   const double workPerWI{128 * 16 * 2}; // Indicates flops executed per work-item
   const double gflops = (workPerWI * globalWI * world_size * 1E-9) / min_time;

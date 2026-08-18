@@ -34,6 +34,24 @@ namespace health_checks {
 constexpr int kRankIdHostLen = 64;
 constexpr int kRankIdMaskLen = 32;
 
+// This rank's hostname, or "unknown" if it cannot be read. Used both for the
+// rank map and to name the hardware in a validation failure.
+inline std::string rank_host() {
+  char host[kRankIdHostLen];
+  std::memset(host, 0, sizeof(host));
+  if (gethostname(host, sizeof(host) - 1) != 0)
+    std::strncpy(host, "unknown", sizeof(host) - 1);
+  return std::string(host);
+}
+
+// This rank's tile affinity from ZE_AFFINITY_MASK, or "unset". On Aurora the
+// launch wrapper assigns one tile per rank, so this identifies the device that
+// produced a result.
+inline std::string rank_tile() {
+  const char *env_mask = std::getenv("ZE_AFFINITY_MASK");
+  return std::string(env_mask ? env_mask : "unset");
+}
+
 // Gathers hostname and tile affinity for every rank and prints the map from
 // rank 0. Collective: every rank must call it.
 inline void print_rank_identity(const std::string &kernel_name) {
@@ -43,13 +61,11 @@ inline void print_rank_identity(const std::string &kernel_name) {
 
   char host[kRankIdHostLen];
   std::memset(host, 0, sizeof(host));
-  if (gethostname(host, sizeof(host) - 1) != 0)
-    std::strncpy(host, "unknown", sizeof(host) - 1);
+  std::strncpy(host, rank_host().c_str(), sizeof(host) - 1);
 
   char mask[kRankIdMaskLen];
   std::memset(mask, 0, sizeof(mask));
-  const char *env_mask = std::getenv("ZE_AFFINITY_MASK");
-  std::strncpy(mask, env_mask ? env_mask : "unset", sizeof(mask) - 1);
+  std::strncpy(mask, rank_tile().c_str(), sizeof(mask) - 1);
 
   std::vector<char> all_hosts, all_masks;
   if (world_rank == 0) {

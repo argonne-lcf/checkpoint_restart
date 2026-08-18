@@ -438,6 +438,10 @@ gpu_core_devices                  6              6
 gpu_core_total_mib         78643200       78643200
 ```
 
+Those are the values job 8763307 recorded. `gpu_core_total_mib` has since been
+fixed and reports 746928 on the same hardware; see below. The Sysman columns
+are unaffected — they read zero either way, which is what this table is about.
+
 Sysman is unavailable on this platform, not merely unset. The consequence is
 that **`gpu_used_mib` cannot detect leaked VRAM on Aurora**. It is retained
 with `missing_ok: true` for sites where Sysman does work, and
@@ -453,17 +457,39 @@ with no GPU it reports `gpu_devices: 0 < min 1`. It proves GPUs were
 enumerated, which is a weaker statement than "no VRAM is pinned" but is a real
 measurement rather than an absent one.
 
-### gpu_core_total_mib is wrong by 100x
+### gpu_core_total_mib was wrong by two orders of magnitude
 
-The column reports 78643200 MiB across six devices, or 12.5 TiB each. Aurora
-Max 1550 GPUs have 128 GiB each, so the value is exactly 100 times too large.
+The column reported 78643200 MiB across six devices, or 12.5 TiB each, against
+124488 MiB (121.6 GiB) of real HBM per device. It now reports 746928 MiB, which
+is six devices at 124488 MiB. Measured on a compute node, job 8763469:
 
-The cause is in `src/memory/mem_and_gpu_row.cpp`. `scan_total_size_from_props`
-does not read a documented struct field; it scans a 256-byte opaque buffer at
-four-byte strides for any 8-byte value between 1 GiB and 16 TiB, takes the
-largest, and the caller then sums one such value per memory module. Whatever it
-is finding is not the device VRAM size.
+```
+gpu_core_devices          6
+gpu_core_total_mib   746928     (was 78643200)
+per device           124488 MiB
+```
 
-This is upstream code and is left unmodified. Nothing in the shipped
-configuration gates on `gpu_core_total_mib`, and nothing should until it is
-fixed. Use `gpu_core_devices`, which is a plain device count and is correct.
+Two faults in `src/memory/mem_and_gpu_row.cpp` produced the old value.
+
+The buffer was declared `vector<uint8_t> buf(mcount * 256)` and passed to
+`zeDeviceGetMemoryProperties`, which writes an array of
+`ze_device_memory_properties_t`. That struct is 296 bytes on this platform
+(measured, job 8763459), so the driver's element *k* sat at `k*296` while the
+reader looked at `k*256`. Aurora reports one memory module per device, so the
+offsets coincided at `k=0`: the device count stayed correct while the size did
+not. With two or more modules every later read would straddle a struct
+boundary.
+
+The helper also never read a named field. `scan_total_size_from_props` walked
+the buffer in four-byte steps, reinterpreted each position as a `uint64_t`, and
+kept the largest value between 1 GiB and 16 TiB. A 296-byte struct holds many
+32-bit fields whose adjacent pairs read as a plausible 64-bit size, so the
+scan was finding an artifact rather than the VRAM size.
+
+The code now declares the documented struct prefix, passes a correctly sized
+array, and reads `props[k].totalSize`. A `static_assert` on the offset of
+`totalSize` fails the build if the layout assumption is ever wrong.
+
+Nothing in the shipped configuration gates on `gpu_core_total_mib`; it remains
+diagnostic. `gpu_core_devices` is a plain device count and was correct
+throughout.

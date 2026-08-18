@@ -96,6 +96,7 @@
 
 
 #include <algorithm>
+#include <cstddef>
 #include <cctype>
 #include <cinttypes>
 #include <cstdint>
@@ -295,22 +296,37 @@ static bool loadL0(L0& l0, const string& explicitPath){
 }
 
 // ---- robust scan for totalSize inside each ze_device_memory_properties_t ----
-static uint64_t scan_total_size_from_props(const uint8_t* base, size_t len){
-    // Look for plausible 64-bit byte sizes: >= 1 GiB and <= 16 TiB.
-    // We scan every 4 bytes to be tolerant to struct packing.
-    const uint64_t MIN = (1ull<<30);        // 1 GiB
-    const uint64_t MAX = (1ull<<44);        // 16 TiB
-    uint64_t best = 0;
-    size_t upto = min(len, (size_t)256);    // ZE structs are small; 256B per entry is plenty
-    for(size_t off=0; off+8<=upto; off+=4){
-        uint64_t v;
-        memcpy(&v, base+off, sizeof(v));
-        if(v >= MIN && v <= MAX) {
-            if(v > best) best = v;
-        }
-    }
-    return best;
-}
+// Level Zero device memory properties, prefix only.
+//
+// This file loads libze_loader.so with dlopen and deliberately does not
+// include the Level Zero headers, so that it builds on a node with no GPU
+// toolchain. The fields below are the documented leading members of
+// ze_device_memory_properties_t in the same order; only totalSize is read.
+//
+// The previous implementation avoided declaring the struct by scanning the
+// returned buffer for any 8-byte value that looked like a memory size. That
+// produced 12.5 TiB per device against 124488 MiB of real HBM, because a
+// 296-byte struct contains many 4-byte fields whose adjacent pairs read as a
+// plausible 64-bit size (job 8763459).
+// Value of ze_structure_type_t::ZE_STRUCTURE_TYPE_DEVICE_MEMORY_PROPERTIES.
+#define ZE_STRUCTURE_TYPE_DEVICE_MEMORY_PROPERTIES 0x00000009
+
+struct ze_device_memory_properties_prefix {
+    int          stype;
+    void*        pNext;
+    uint32_t     flags;
+    uint32_t     maxClockRate;
+    uint32_t     maxBusWidth;
+    uint64_t     totalSize;
+    char         name[256];
+};
+
+// The driver writes an array of the full struct. Reading element k requires
+// the driver's element size, not a guess: an assumed 256-byte stride against
+// a real 296-byte struct silently misreads every element after the first.
+static_assert(offsetof(ze_device_memory_properties_prefix, totalSize) == 24 ||
+              offsetof(ze_device_memory_properties_prefix, totalSize) == 32,
+              "unexpected layout for ze_device_memory_properties_t prefix");
 
 struct GpuRow {
     int sysman_devices=0;
@@ -379,15 +395,18 @@ static GpuRow gather_gpu_row(const string& zePath){
                     for(auto dv : devs){
                         uint32_t mcount=0;
                         if(l0.zeDeviceGetMemoryProperties(dv, &mcount, nullptr)!=OK || mcount==0) continue;
-                        // allocate enough space per entry
-                        const size_t stride = 256; // generous
-                        vector<uint8_t> buf(mcount * stride, 0);
-                        if(l0.zeDeviceGetMemoryProperties(dv, &mcount, buf.data())!=OK) continue;
+                        // A real array of the real type: the driver strides by
+                        // sizeof(the struct), so anything else misreads element k>0.
+                        vector<ze_device_memory_properties_prefix> props(mcount);
+                        for(auto &p : props){
+                            memset(&p, 0, sizeof(p));
+                            p.stype = ZE_STRUCTURE_TYPE_DEVICE_MEMORY_PROPERTIES;
+                        }
+                        if(l0.zeDeviceGetMemoryProperties(dv, &mcount, props.data())!=OK) continue;
 
                         uint64_t totalSum=0;
                         for(uint32_t k=0;k<mcount;++k){
-                            const uint8_t* base = buf.data() + k*stride;
-                            totalSum += scan_total_size_from_props(base, stride);
+                            totalSum += props[k].totalSize;   // documented field
                         }
                         g.core_total_mib += (long long)(totalSum / (1024ULL*1024ULL));
                     }
