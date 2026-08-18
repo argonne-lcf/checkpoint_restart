@@ -1,28 +1,73 @@
-# Checkpoint / Restart tests on Exascale computing systems
+# Checkmate: Resilient Job Continuation with Checkpoint/Restart and Node-Health Tooling at Exascale
 
-For questions, please contact: Huihuo Zheng <huihuo.zheng@anl.gov>
+For questions, please contact: Kaushik Velusamy <kaushik.v@anl.gov> and Huihuo Zheng <huihuo.zheng@anl.gov>
 
 Exascale computing systems often experience instabilities that can cause job terminations before completion.
 
-To ensure large-scale simulations can continue efficiently, checkpoint/restart mechanisms are essential.
+To enhance the resilience of large-scale simulations on exascale systems, checkpoint/restart mechanisms and node-health monitoring are essential for detecting failures, minimizing lost computation, and enabling efficient recovery.
 
-This repository provides:
-	•	Simple programs to simulate common job execution issues:
-(1) hanging, (2) mid-run failures, and (3) successful completion.
-	•	Example submission scripts that automatically detect failures and restart jobs using healthy nodes.
+This repository provides three things, usable independently.
 
-The **key idea** is to over-allocate nodes, allowing jobs to be restarted on a healthy subset of nodes if a failure occurs.
+**Detect.** Microkernels in `utils/check_healthy_tests` measure what a node can
+actually do: memory bandwidth, floating-point throughput per GPU tile, PCIe and
+tile-to-tile transfer rates, network injection and bisection bandwidth, and
+available host and device memory. Each reports a number rather than a verdict.
+The useful question is not "did it run" but "how does this node compare with
+its peers".
+
+**Decide.** `system_monitoring/run_health_checks.py` applies thresholds to
+those numbers. A check that exits successfully while reporting a third of the
+expected bandwidth is a failure, and treating exit status as health misses it
+entirely. Bounds are optional per rule: a rule without them records and trends
+a value without gating on it, which is how a threshold gets calibrated before
+it is enforced.
+
+**Recover.** `utils/get_healthy_nodes.sh` selects nodes for the next attempt
+and can probe each one for free memory before admitting it. The retry loop in
+`examples/crash_restart` restarts from the last checkpoint on the surviving
+nodes. The key idea is to over-allocate, so a job can restart on a healthy
+subset. A node is retired only after a measured slowdown, not after a single
+crash, because most crashes are not the node's fault.
+
+Also included are programs that simulate the common failure modes — hanging,
+mid-run failure, and successful completion — for testing a restart loop without
+waiting for real hardware to misbehave.
 
 ![alt text](.docs/figures/schematic.png)
+
+## Where to start
+
+| Goal | Path |
+|---|---|
+| See the state of every node in an allocation | `utils/node_memory_report.sh` |
+| Run every microkernel and report values and timings | `utils/check_healthy_tests/scripts/run_all_tests.sh` |
+| Define or adjust a health threshold | `system_monitoring/health_checks.yaml` |
+| Restart a job across node failures | `examples/crash_restart/` |
+| Diagnose a node suspected of being slow | `utils/gemm_diagnose.sh` |
 
 ## Install the package
 
 ```bash
-git clone https://github.com/argonne-lcf/checkpoint_restart
-cd checkpoint_restart
+git clone https://github.com/argonne-lcf/checkmate
+cd checkmate
 pip install -e .
 ```
-This will install the `check_hang.py`, `check_nan.py`, and `get_healthy_nodes.sh` scripts into your environment.
+This will install the `check_hang.py`, `check_nan.py`, `get_healthy_nodes.sh` and `gemm_diagnose.sh` scripts into your environment.
+
+### Requirements
+
+- Python 3.6 or later; `PyYAML>=6.0` for the health-check runner
+  (`pip install -r requirements.txt`).
+- CMake 3.18 or later and an MPI compiler to build the microkernels.
+- Optional: `icpx` for the SYCL/oneMKL kernels and Level Zero for the
+  fabric topology tool. A missing dependency drops the affected
+  targets with a warning rather than failing the configure.
+
+On Aurora, `module load frameworks` provides Python 3.12 with PyYAML,
+and `module load cmake` puts CMake on PATH. Load `frameworks` only for
+the Python runner: it overrides the default oneAPI runtime, and SYCL
+kernels launched under it abort with "No device of requested type
+available".
 
 ## Useful Scripts
 
@@ -82,7 +127,7 @@ This repository includes several scripts to help manage and monitor jobs. After 
 
   **This is a calculator, not an allocator.** PBS fixes the node count from the
   `#PBS -l select=` directive before the job script runs, so no part of
-  checkpoint_restart can request additional nodes. The reserve must be included
+  checkmate can request additional nodes. The reserve must be included
   in the submission by the user; the package then manages spares within the
   allocation it is given. Run `overalloc.sh` before submitting and write the
   result into the directive:
@@ -122,7 +167,6 @@ The test_pyjob.py script allows you to simulate various job behaviors:
 ```
 python test_pyjob.py --fail 120 --checkpoint ./chkpt --niters 1000
 ```
-
 
 - `node_usage_summary.sh`: Prints a high level node-usage report for a run:
   which nodes ran work, when each entered and left service, how long each was
@@ -247,6 +291,7 @@ run_health_checks.py --build --include-disabled --checks triad,flops
 ```
 
 The YAML controls:
+- value-based pass/fail via `expect:` rules (see below)
 - which microkernels are enabled (`enabled: true|false`)
 - grouping (`group`) for selective execution
 - concrete launch command (`command`) and optional timeout/env
@@ -258,13 +303,142 @@ Enable them on cluster allocations with:
 run_health_checks.py --build --include-disabled --checks simple_injection_bisection,full_injection_bisection,triad,flops,topology
 ```
 
+### Value-based health gating
+
+A check can pass its exit code and still be unhealthy. An `expect:`
+block gates on measured values parsed from the check's stdout:
+
+```yaml
+- id: mem_and_gpu_row
+  command: ["{build_dir}/mem_and_gpu_row", "--csv"]
+  env:
+    ZES_ENABLE_SYSMAN: "1"
+  expect:
+    - name: mem_available_mib
+      column: mem_available_mib
+      min: 65536
+    - name: gpu_devices
+      column: gpu_core_devices
+      min: 1
+```
+
+The value is located by column name, taken from the header the kernel prints.
+Adding a column upstream cannot silently change which number is gated, which a
+positional regex cannot promise. To see the available names:
+
+```bash
+./build/health_checks/mem_and_gpu_row --csv | head -1 | tr ',' '\n'
+```
+
+Three levels are available:
+
+| YAML | behaviour |
+|---|---|
+| no `expect:` | exit code only |
+| `expect:` without `min`/`max` | record-only: measured and trended, never fails |
+| `expect:` with `min`/`max` | gates the check |
+
+Record-only is the mechanism for acquiring a threshold that is not yet
+known: run it across a real allocation, read the recorded values from
+the dashboard JSON, then set a bound.
+
+See [system_monitoring/README.md](./system_monitoring/README.md) for
+the full rule syntax.
+
+### What a healthy Aurora node measures
+
+Reference values from a two-node debug allocation, 12 ranks per node, CPU-bound
+with one rank per GPU tile (job 8763237). These are measurements from one run
+on one pair of nodes, not vendor specifications. Use them to recognise a node
+that is obviously wrong, and collect a local baseline before setting
+thresholds.
+
+| Measurement | 12 ranks (1 node) | 24 ranks (2 nodes) |
+|---|---|---|
+| Memory bandwidth (triad) | 12311.8 GB/s | 20843.8 GB/s |
+| Peak FP32 | 255605 GFlop/s | 479661 GFlop/s |
+| Peak FP64 | 190517 GFlop/s | 363820 GFlop/s |
+| DGEMM | 171351 GFlop/s | 339606 GFlop/s |
+| SGEMM | 247324 GFlop/s | 492117 GFlop/s |
+| HGEMM | 2467740 GFlop/s | 4693590 GFlop/s |
+| BF16 GEMM | 2462280 GFlop/s | 4752330 GFlop/s |
+| TF32 GEMM | 1288180 GFlop/s | 2459870 GFlop/s |
+| I8 GEMM | 5088330 GFlop/s | 9287100 GFlop/s |
+| FFT C2C 1D | 36596.2 GFlop/s | not run |
+| FFT C2C 2D | 34933.6 GFlop/s | not run |
+| PCIe H2D | 328 GB/s | not run |
+| PCIe D2H | 264 GB/s | not run |
+| PCIe bidirectional | 357 GB/s | not run |
+| Tile-to-tile unidirectional | 211 GB/s | not run |
+| Tile-to-tile bidirectional | 391 GB/s | not run |
+| Network injection, aggregate | 153.98 GB/s | 396.90 GB/s |
+| Network bisection, aggregate | 490.05 GB/s | 694.05 GB/s |
+| Host memory available | 1144006 MiB | not run |
+| GPU devices enumerated | 6 | not run |
+
+Compute figures scale close to twice the single-node values, as expected for
+per-rank kernels that do not communicate. Network bisection does not double,
+because the second node introduces off-node traffic.
+
+The spread across tiles is often a better signal than the absolute value. In
+the run above the slowest tile was within 6.6% of the median on every
+precision, and `gemm` reported no exclusion candidates. A tile 10% or more
+below its peers across several precisions is worth investigating.
+
+## Inspecting node state before a run
+
+`utils/node_memory_report.sh` reports the memory and GPU state of every node in
+an allocation. It is read-only: no node is selected, excluded or retired.
+
+```bash
+./utils/node_memory_report.sh              # every node in $PBS_NODEFILE
+./utils/node_memory_report.sh mynodes.txt  # a specific list
+FORMAT=csv ./utils/node_memory_report.sh   # machine-readable
+```
+
+```
+HOST                            RAM_TOT   RAM_USED  RAM_AVAIL   GPUS   VRAM_TOT  VRAM_USED
+x4302c2s0b0n0                   1030432      45231    1143660      6     786432          0
+x4302c2s1b0n0                   1030432     892104      98311      6     786432      12288  LOW_RAM  VRAM_IN_USE
+```
+
+All values are MiB. `RAM_AVAIL` is what a new allocation can actually use.
+Nodes that cannot be probed appear as `UNREACHABLE` rather than being dropped
+from the report.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `HEALTH_PROBE_BIN` | build tree path | probe binary |
+| `PROBE_TIMEOUT` | 30 | per-node timeout, seconds |
+| `FORMAT` | `table` | `table` or `csv` |
+| `WARN_MEM_MIB` | 65536 | flag nodes below this available RAM |
+| `WARN_GPU_MIB` | 4096 | flag nodes above this GPU memory in use |
+
+Use this to see the state of a pool. To act on it during node selection, use
+`HEALTH_LEVEL=mem` with `get_healthy_nodes.sh`, which applies the same probe as
+a gate.
+
+## Running the full microkernel suite
+
+```bash
+qsub -A <project> -q debug -l select=2:ncpus=208 \
+     -l walltime=00:30:00 -l filesystems=flare \
+     utils/check_healthy_tests/scripts/run_all_tests.sh
+```
+
+Builds the microkernels, runs each one at serial, single-node and full
+allocation scale, and prints a per-test wall-time table. Results land in
+`test_results/run_<jobid>/`. See
+[utils/check_healthy_tests/README.md](./utils/check_healthy_tests/README.md).
+
 ## Various simulation examples
+- [crash_restart/](./examples/crash_restart): node failure, substitute a spare and resume
 - [fail/](./examples/fail): job failed after 100 seconds, restart
 - [hang/](./examples/hang): job hang, kill and restart
 - [success/](./examples/success): job run seccessfully
 - [nan/](./examples/nan): NaN after a few iterations, restart
 
 ## Checkpoint interval optimization utility
-- [optimal_checkpointing.py](./optimal_checkpointing.py)
+- [optimal_checkpointing.py](./utils/optimal_checkpointing.py)
   Determine the optimal time interval of computation between checkpoints
   for a job of determined node size and checkpointed memory per node

@@ -1,3 +1,28 @@
+# Health-check definitions for run_health_checks.py.
+#
+# Each entry is one triggerable test. Run by ID or by group:
+#
+#   python3 run_health_checks.py --list
+#   python3 run_health_checks.py --checks mem_and_gpu_row
+#   python3 run_health_checks.py --groups gpu_compute
+#   python3 run_health_checks.py --checks triad --include-disabled
+#
+# Fields:
+#   id           unique name, used with --checks
+#   group        used with --groups
+#   enabled      false = skipped unless named explicitly or --include-disabled
+#   description  one line, shown by --list
+#   timeout      seconds; the check is failed with rc=124 if it overruns
+#   command      string (runs through a shell) or list (exec'd directly)
+#   cwd          working directory, templated
+#   env          per-check environment additions
+#
+# Templates available in command/cwd: {repo_root}, {source_dir}, {build_dir}.
+#
+# Tests are disabled by default when they need more than one node, a GPU
+# toolchain, or a module load, so that a bare single-node run stays quick and
+# green. See utils/check_healthy_tests/README.md for requirements per test.
+
 default_env: {}
 
 build:
@@ -12,6 +37,10 @@ build:
     - "{build_dir}"
     - -DHEALTH_CHECKS_ENABLE_MPI=ON
     - -DHEALTH_CHECKS_ENABLE_OPENMP=ON
+    # SYCL and Level Zero are off by default: they need `module load oneapi`
+    # and -DCMAKE_CXX_COMPILER=mpicxx. Turn both on to build pci, peer2pear,
+    # gemm, fftc2c and topology.
+    - -DHEALTH_CHECKS_ENABLE_SYCL=OFF
     - -DHEALTH_CHECKS_ENABLE_LEVEL_ZERO=OFF
   build_command:
     - cmake
@@ -20,67 +49,271 @@ build:
     - -j
 
 checks:
+
+  # ---- smoke ---------------------------------------------------------------
+
   - id: hello_world_scale
     group: smoke
     enabled: true
-    description: Basic MPI launch sanity.
-    command: "bash -lc 'if [ -n \"$PBS_NODEFILE\" ]; then bash {repo_root}/utils/check_healthy_tests/hello_world_scale.sh; else echo \"Skipping hello_world_scale: PBS_NODEFILE is not set\"; fi'"
+    description: MPI launch and node reachability across the allocation.
+    timeout: 600
+    command: >-
+      bash -lc 'if [ -n "$PBS_NODEFILE" ]; then
+      bash {source_dir}/scripts/hello_world_scale.sh;
+      else echo "Skipping hello_world_scale: PBS_NODEFILE is not set"; fi'
+
+  # ---- memory --------------------------------------------------------------
 
   - id: mem_and_gpu_row
     group: memory
     enabled: true
-    description: CPU/GPU memory snapshot.
+    description: Host RAM buckets and GPU VRAM used/total, one CSV row.
+    timeout: 120
     command:
       - "{build_dir}/mem_and_gpu_row"
       - --csv
+    env:
+      # Sysman reports GPU memory in use. Measured on Aurora (job 8763307)
+      # this variable changes nothing -- Sysman is unavailable there, not
+      # merely unset -- so gpu_used_mib below cannot fire on that platform.
+      # Set for sites where Sysman does work.
+      ZES_ENABLE_SYSMAN: "1"
+    # Thresholds turn this from "the binary ran" into a real health verdict.
+    # The CSV emits a header naming every field, so a rule names the column it
+    # gates. The value is located by name, so adding a column upstream cannot
+    # silently change which number is checked.
+    expect:
+      # Below ~64 GiB available a 12-rank job will not fit.
+      - name: mem_available_mib
+        column: mem_available_mib
+        min: 65536
+      # Non-zero on an otherwise idle node means a previous job left VRAM
+      # pinned. Requires ZES_ENABLE_SYSMAN=1 (set in env above), and on
+      # Aurora reads zero even then. missing_ok covers both that case and
+      # sites where Sysman is disabled by policy. Not a working check on
+      # Aurora; gpu_devices below is what actually gates there.
+      - name: gpu_used_mib
+        column: gpu_sysman_used_mib
+        max: 4096
+        missing_ok: true
+      # Independent of Sysman. Proves GPUs were actually enumerated, so a node
+      # reporting no devices fails rather than passing an empty measurement.
+      # Deliberately not missing_ok.
+      - name: gpu_devices
+        column: gpu_core_devices
+        min: 1
+
+  # ---- network -------------------------------------------------------------
+  # Meaningful only across two or more nodes; disabled for single-node runs.
 
   - id: simple_injection_bisection
-    group: injection_bisection
+    group: network
     enabled: false
-    description: Injection/bisection communication test (MPI required).
+    description: Injection and bisection bandwidth, nonblocking transfers.
+    timeout: 900
     command:
       - mpiexec
       - -n
-      - "4"
+      - "24"
+      - -ppn
+      - "12"
+      - --no-vni
       - "{build_dir}/simple_injection_bisection"
+      - --size
+      - 1m
       - --iters
-      - "10"
+      - "50"
 
   - id: full_injection_bisection
-    group: injection_bisection
+    group: network
     enabled: false
-    description: Full-scale injection/bisection test.
+    description: Injection and bisection bandwidth, blocking Sendrecv.
+    timeout: 900
     command:
       - mpiexec
       - -n
-      - "4"
+      - "24"
+      - -ppn
+      - "12"
+      - --no-vni
       - "{build_dir}/full_injection_bisection"
+      - --size
+      - 1m
       - --iters
-      - "10"
+      - "50"
+
+  # ---- gpu_compute ---------------------------------------------------------
+  # One rank per GPU tile, each pinned by gpu_tile_compact.sh.
 
   - id: triad
-    group: interconnect
+    group: gpu_compute
     enabled: false
-    description: OpenMP offload memory bandwidth test.
+    description: GPU memory bandwidth, STREAM triad via OpenMP offload.
+    timeout: 900
     command:
       - mpiexec
       - -n
-      - "2"
+      - "12"
+      - --
+      - "{source_dir}/scripts/gpu_tile_compact.sh"
       - "{build_dir}/triad"
 
   - id: flops
-    group: interconnect
+    group: gpu_compute
     enabled: false
-    description: OpenMP offload FLOPS test.
+    description: GPU peak single and double precision FLOP rate.
+    timeout: 900
     command:
       - mpiexec
       - -n
-      - "2"
+      - "12"
+      - --
+      - "{source_dir}/scripts/gpu_tile_compact.sh"
       - "{build_dir}/flops"
+
+  - id: gemm
+    group: gpu_compute
+    enabled: false
+    description: GEMM throughput in six precisions, per-tile outliers (needs oneMKL).
+    timeout: 1800
+    # Reports each tile against its node median and the global median, then
+    # ranks exclusion candidates. Reporting only: --fail-on-outlier is
+    # deliberately absent, because run_health_checks.py treats any nonzero
+    # exit as FAIL and one flagged tile would fail the whole run. Use the
+    # gemm_gate check below when a pass/fail verdict is wanted instead.
+    command:
+      - mpiexec
+      - -n
+      - "12"
+      - --
+      - "{source_dir}/scripts/gpu_tile_compact.sh"
+      - "{build_dir}/gemm"
+
+  - id: gemm_gate
+    group: gpu_compute
+    enabled: false
+    description: GEMM per-tile outlier gate; fails when a tile is >15% slow.
+    timeout: 1800
+    # Same kernel as `gemm`, run as a gate. Exits 3 when any tile falls more
+    # than 15% below its node or global median, so this FAILs the run and can
+    # drive node exclusion. Threshold is deliberately looser than the 10%
+    # default to reduce false positives from thermal variation.
+    command:
+      - mpiexec
+      - -n
+      - "12"
+      - --
+      - "{source_dir}/scripts/gpu_tile_compact.sh"
+      - "{build_dir}/gemm"
+      - --quiet-tiles
+      - --threshold
+      - "15"
+      - --fail-on-outlier
+
+  - id: fftc2c
+    group: gpu_compute
+    enabled: false
+    description: Batched 1D and 2D complex FFT throughput (needs oneMKL).
+    timeout: 1800
+    command:
+      - mpiexec
+      - -n
+      - "12"
+      - --
+      - "{source_dir}/scripts/gpu_tile_compact.sh"
+      - "{build_dir}/fftc2c"
+
+  # ---- gpu_transfer --------------------------------------------------------
+
+  - id: pci
+    group: gpu_transfer
+    enabled: false
+    description: PCIe host-to-device, device-to-host and bidirectional bandwidth.
+    timeout: 900
+    # CPU binding matters: an unpinned rank can land on a NUMA node remote from
+    # its GPU and report a misleadingly low number.
+    command:
+      - mpiexec
+      - -n
+      - "12"
+      - --cpu-bind
+      - list:1,2,3,4,5,6,52,53,54,55,56,57
+      - --
+      - "{source_dir}/scripts/gpu_tile_compact.sh"
+      - "{build_dir}/pci"
+
+  - id: peer2pear_tile
+    group: gpu_transfer
+    enabled: false
+    description: Tile-to-tile peer bandwidth between adjacent GPU tiles.
+    timeout: 900
+    env:
+      MPIR_CVAR_CH4_IPC_GPU_ENGINE_TYPE: copy_high_bandwidth
+    command:
+      - mpiexec
+      - -n
+      - "12"
+      - --
+      - "{source_dir}/scripts/gpu_tile_compact.sh"
+      - "{build_dir}/peer2pear"
+      - Tile2Tile
+
+  - id: peer2pear_gpu
+    group: gpu_transfer
+    enabled: false
+    description: GPU-to-GPU peer bandwidth between same-plane GPUs (needs topology).
+    timeout: 900
+    # gpu_tile_plan_compact.sh shells out to ./topology, so run from the build
+    # directory where that binary was written.
+    cwd: "{build_dir}"
+    env:
+      MPIR_CVAR_CH4_IPC_GPU_ENGINE_TYPE: copy_high_bandwidth
+    command:
+      - mpiexec
+      - -n
+      - "12"
+      - --
+      - "{source_dir}/scripts/gpu_tile_plan_compact.sh"
+      - "{build_dir}/peer2pear"
+      - GPU2GPU
+
+  # ---- topology ------------------------------------------------------------
 
   - id: topology
     group: topology
     enabled: false
-    description: Level Zero fabric topology (requires Level Zero headers/libs).
+    description: Intel Xe Link fabric plane discovery via Level Zero.
+    timeout: 120
     command:
       - "{build_dir}/topology"
+
+  # ---- collective ----------------------------------------------------------
+
+  - id: all_reduce_torch_xccl
+    group: collective
+    enabled: false
+    description: torch.distributed allreduce latency over XCCL on XPU.
+    timeout: 1800
+    # Requires `module load frameworks` in the surrounding shell; a
+    # pip-installed torch will not see the XPU devices.
+    env:
+      CCL_PROCESS_LAUNCHER: pmix
+      CCL_ATL_TRANSPORT: mpi
+      CCL_KVS_MODE: mpi
+      CCL_CONFIGURATION_PATH: ""
+      CCL_CONFIGURATION: cpu_gpu_dpcpp
+      CCL_KVS_CONNECTION_TIMEOUT: "600"
+      CCL_KVS_USE_MPI_RANKS: "1"
+    command:
+      - mpiexec
+      - -np
+      - "12"
+      - -ppn
+      - "12"
+      - --cpu-bind
+      - list:4:9:14:19:20:25:56:61:66:71:74:79
+      - python3
+      - "{source_dir}/src/collective/all_reduce_torch_xccl.py"
+      - 1mb
+      - --iters
+      - "5"

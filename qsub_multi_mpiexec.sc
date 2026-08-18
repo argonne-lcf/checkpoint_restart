@@ -50,6 +50,34 @@ fi
 
 rm -f check_hang.r$JOBID
 
+# ---------------------------------------------------------------------------
+# Optional once-per-job fitness baseline.
+#
+# This runs BEFORE the retry loop, deliberately. gemm is far too expensive to
+# repeat on every restart, and its value here is a reference measurement taken
+# while the allocation is known-good: a later diagnosis run has something to
+# compare against. Off by default so the default path costs nothing.
+#
+#   GEMM_BASELINE=1   run the baseline before trial 1
+# ---------------------------------------------------------------------------
+if [ "${GEMM_BASELINE:-0}" = "1" ]; then
+    echo "Recording gemm baseline before the first trial"
+    gemm_diagnose.sh nodefile_all gemm_baseline.$JOBID "${GEMM_OUTLIER_PCT:-10}"
+    BASELINE_RC=$?
+    if [ $BASELINE_RC -eq 3 ]; then
+        # Report only: a slow tile at job start is information, not grounds to
+        # refuse to run. Retirement decisions are made after a real crash.
+        echo "Baseline flagged slow tiles; see gemm_baseline.$JOBID.candidates"
+    elif [ $BASELINE_RC -ne 0 ]; then
+        echo "Baseline did not produce a verdict (rc=$BASELINE_RC); continuing"
+    fi
+fi
+
+# Tracks how many trials each node has been part of that ended in failure.
+# A node is only diagnosed once it has been implicated twice, because a single
+# crash is far more often the job than the hardware.
+: > node_failures.$JOBID
+
 echo "Started running job at `date`"
 
 for RUN in `seq 1 $MAX_TRIALS`
@@ -84,6 +112,41 @@ do
     # merely in use return to the pool: retiring an entire trial would drain a
     # 5 node pool after a single 4 node attempt, leaving nothing for a restart.
     cat pbs_nodefile$RUN.unhealthy 2>/dev/null | sort -u > retired_nodes$RUN
+
+    # -----------------------------------------------------------------------
+    # Two-strike diagnosis.
+    #
+    # Every node in a failed trial gets a strike. A node reaching two strikes
+    # has now been present for two failures, which is weak evidence of bad
+    # hardware but enough to justify the cost of a perf probe. Only those
+    # nodes are diagnosed, and only a measured slowdown retires one.
+    #
+    #   GEMM_DIAGNOSE=1   enable (off by default)
+    # -----------------------------------------------------------------------
+    if [ "${GEMM_DIAGNOSE:-0}" = "1" ]; then
+        sort -u pbs_nodefile$RUN >> node_failures.$JOBID
+        sort node_failures.$JOBID | uniq -c \
+            | awk '$1 >= 2 {print $2}' > repeat_offenders$RUN
+
+        NREPEAT=$(wc -l < repeat_offenders$RUN)
+        if [ "$NREPEAT" -gt 0 ]; then
+            echo "Diagnosing $NREPEAT node(s) implicated in two or more failures"
+            gemm_diagnose.sh repeat_offenders$RUN gemm_diag.$JOBID.r$RUN \
+                "${GEMM_OUTLIER_PCT:-10}"
+            if [ $? -eq 3 ]; then
+                # Measured slow: retire permanently, on top of the ping result.
+                cat gemm_diag.$JOBID.r$RUN.candidates >> retired_nodes$RUN
+                sort -u retired_nodes$RUN -o retired_nodes$RUN
+                echo "Retiring measured-slow node(s):"
+                cat gemm_diag.$JOBID.r$RUN.candidates
+            else
+                # No measured defect: the node goes back to the pool rather
+                # than being drained on suspicion alone.
+                echo "No measured slowdown; repeat offenders stay in the pool"
+            fi
+        fi
+    fi
+
     grep -vxF -f retired_nodes$RUN nodefile_pool > nodefile_pool.next
     mv nodefile_pool.next nodefile_pool
     echo "Spare pool after trial $RUN: $(cat nodefile_pool | wc -l) nodes remain"

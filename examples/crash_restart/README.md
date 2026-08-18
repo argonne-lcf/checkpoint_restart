@@ -16,7 +16,7 @@ trial 2 : nodeA         nodeC  nodeD  nodeE   nodeE substituted from reserve
 
 The same four-node job, run on a system where one node fails partway through.
 
-### Without checkpoint_restart
+### Without checkmate
 
 ```bash
 #PBS -l select=4
@@ -33,7 +33,7 @@ mpiexec -np 48 --ppn 12 python my_app.py
        - the job must be resubmitted and requeued
 ```
 
-### With checkpoint_restart
+### With checkmate
 
 ```bash
 #PBS -l select=6                       # 4 + 50% reserve
@@ -109,7 +109,7 @@ Five modifications are required.
 
 ### 1. Request the node reserve
 
-**The reserve must be requested by the user. checkpoint_restart cannot obtain
+**The reserve must be requested by the user. checkmate cannot obtain
 additional nodes.**
 
 PBS reads the `#PBS -l select=` directive before the first line of the script is
@@ -205,6 +205,56 @@ done
 | `.free` | healthy nodes not selected for this trial (the remaining reserve) |
 
 ### 4. Identify failed nodes
+
+## Health level
+
+By default `get_healthy_nodes.sh` selects nodes by reachability: a node that
+answers a ping is considered healthy. This catches a node that has gone away,
+which is the common crash-restart case, but not a node that is up and
+degraded.
+
+`HEALTH_LEVEL=mem` adds a measured probe. Each reachable node runs the
+`mem_and_gpu_row` microkernel and must satisfy the configured floors before it
+is selected:
+
+```bash
+export HEALTH_LEVEL=mem
+export HEALTH_PROBE_BIN=$REPO_DIR/build/health_checks/mem_and_gpu_row
+get_healthy_nodes.sh nodefile_pool $JOBSIZE pbs_nodefile$RUN crashed_nodes
+```
+
+| variable | default | meaning |
+|---|---|---|
+| `HEALTH_LEVEL` | `ping` | `ping` or `mem` |
+| `HEALTH_PROBE_BIN` | build tree path | probe binary |
+| `HEALTH_MIN_MEM_AVAIL_MIB` | 65536 | minimum available RAM |
+| `HEALTH_MAX_GPU_USED_MIB` | 4096 | maximum GPU memory in use (no effect on Aurora, see note) |
+| `HEALTH_MIN_GPU_DEVICES` | 0 | minimum GPU count reported by sysman |
+
+Sysman is unavailable on Aurora, so `gpu_sysman_used_mib` reads 0 on a healthy
+node and the GPU threshold cannot fire there (measured, job 8763307). The
+host-memory threshold is unaffected.
+
+The probe writes a `.probe` file next to the node lists, recording the measured
+values per node:
+
+```
+x4418c2s1b0n0 PROBE_OK   mem_available=1143660 gpu_used=0 gpu_devices=0
+x4418c2s3b0n0 PROBE_FAIL mem_available=1141181<99999999
+```
+
+Two behaviours are deliberate:
+
+- **Fail open on infrastructure.** If the probe binary is missing, selection
+  degrades to `ping` with a warning rather than draining the pool. A missing
+  build must not cost a job its spares.
+- **Fail closed on thresholds.** A node that runs the probe and misses a floor
+  is excluded.
+
+When no node satisfies the request, the script exits **100**, which the retry
+loop treats as pool exhaustion.
+
+The default `ping` path is unchanged; `HEALTH_LEVEL` is opt-in.
 
 The fourth argument to `get_healthy_nodes.sh` is an exclude file. Nodes listed
 in it are treated as unusable and are never selected, irrespective of whether
@@ -415,5 +465,5 @@ subset causes the available pool to contract on each iteration.
 ## References
 
 - `utils/README.md` — helper script documentation
-- `../../README.md` — checkpoint_restart package documentation
+- `../../README.md` — checkmate package documentation
 - `../fail`, `../hang`, `../nan` — additional failure-mode examples

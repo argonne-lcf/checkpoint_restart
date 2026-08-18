@@ -1,0 +1,34 @@
+# CMake build trees. health_checks.yaml configures build/health_checks as the
+# output directory for the microkernel binaries.
+build/
+
+# Python bytecode.
+__pycache__/
+*.pyc
+
+# Health-check dashboard output.
+system_monitoring/data/
+
+# Job artifacts written into the repo by qsub scripts.
+*.o[0-9]*
+*.e[0-9]*
+outfile.*
+pbs_nodefile*
+nodefile_*
+
+# Per-job run directories written by the test suites. Each PBS job gets
+# its own run_<jobid>/ so a re-run cannot overwrite earlier evidence.
+test_results/
+utils_suite/
+ghn_reverify/
+gemm_timing/
+gemm_validation/
+
+# Scratch build trees used for clean-build audits.
+finalbuild*/
+
+# Backups taken before in-place edits.
+backup_*/
+
+# Sentinel written by a suite as its last action.
+COMPLETE
