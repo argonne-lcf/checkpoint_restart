@@ -95,12 +95,181 @@ def should_include(
     return True
 
 
+def extract_csv_column(output: str, column: str) -> List[float]:
+    """Pull every value of a named column out of CSV output.
+
+    The kernels print a header row naming each field, so a rule can name the
+    column instead of encoding its position in a regex. Locating the field by
+    name means an upstream column insertion cannot silently change which value
+    is gated.
+
+    Any line containing the column name and at least one comma is treated as a
+    candidate header; the following lines with the same field count are data.
+    Returns every parseable value found, in order.
+    """
+    lines = [ln for ln in output.splitlines() if ln.strip()]
+    header_idx = -1
+    header_fields: List[str] = []
+
+    for i, line in enumerate(lines):
+        if "," not in line:
+            continue
+        fields = [f.strip() for f in line.split(",")]
+        if column in fields:
+            header_idx = i
+            header_fields = fields
+            break
+
+    if header_idx < 0:
+        return []
+
+    col_idx = header_fields.index(column)
+    width = len(header_fields)
+    values: List[float] = []
+
+    for line in lines[header_idx + 1:]:
+        if "," not in line:
+            continue
+        fields = [f.strip() for f in line.split(",")]
+        if len(fields) != width or col_idx >= len(fields):
+            continue
+        try:
+            values.append(float(fields[col_idx]))
+        except (TypeError, ValueError):
+            continue
+
+    return values
+
+
+def evaluate_expectations(check: Dict, output: str) -> Tuple[bool, List[str], Dict[str, float]]:
+    """Apply a check's `expect` rules to its captured output.
+
+    Returns (ok, messages, measured_values). A check with no `expect` block is
+    always ok, which keeps exit-code-only checks behaving exactly as before.
+
+    Each rule pulls one number out of the output with a regex and compares it
+    against a bound:
+
+      expect:
+        - name: mem_available_mib
+          column: mem_available_mib     # named CSV field, no regex needed
+          min: 65536
+        - name: dgemm
+          pattern: 'DGEMM: ([0-9.eE+-]+) GFlop/s'
+          min: 10000
+        - name: slow_tiles
+          pattern: 'GEMM_VERDICT ([0-9]+) tile'
+          max: 0
+          missing_ok: true      # absent pattern is not a failure
+
+    A rule whose pattern does not match FAILS by default, because a check that
+    stopped emitting its metric is a real regression rather than a pass. Set
+    missing_ok when absence is legitimate, as with a verdict line that is only
+    printed when something is wrong.
+
+    When a pattern matches repeatedly, `occurrence` selects which value is
+    used: "first" (default), "last", "min", "max". Comparisons are inclusive.
+    """
+    rules = check.get("expect") or []
+    if not rules:
+        return True, [], {}
+
+    ok = True
+    messages: List[str] = []
+    measured: Dict[str, float] = {}
+
+    for idx, rule in enumerate(rules):
+        name = str(rule.get("name", f"expect[{idx}]"))
+        pattern = rule.get("pattern")
+        column = rule.get("column")
+
+        if column and pattern:
+            ok = False
+            messages.append(
+                f"{name}: rule sets both 'column' and 'pattern'; use one"
+            )
+            continue
+
+        if not column and not pattern:
+            ok = False
+            messages.append(f"{name}: rule needs either 'column' or 'pattern'")
+            continue
+
+        values: List[float] = []
+
+        if column:
+            # Named CSV field. Preferred for the kernels that print a header.
+            values = extract_csv_column(output, str(column))
+        else:
+            try:
+                # MULTILINE so a pattern can anchor with ^ on any output line,
+                # not just the first. Without it a '^' rule only ever sees a
+                # CSV header.
+                matches = re.findall(pattern, output, re.MULTILINE)
+            except re.error as exc:
+                ok = False
+                messages.append(f"{name}: invalid regex ({exc})")
+                continue
+
+            # findall returns tuples when the pattern has several groups; keep
+            # the first so a rule can use non-capturing context around a value.
+            flat: List[str] = []
+            for m in matches:
+                flat.append(m[0] if isinstance(m, tuple) else m)
+
+            for token in flat:
+                try:
+                    values.append(float(token))
+                except (TypeError, ValueError):
+                    continue
+
+        if not values:
+            if rule.get("missing_ok", False):
+                how = f"column '{column}'" if column else "pattern"
+                messages.append(f"{name}: {how} not found (missing_ok)")
+            else:
+                ok = False
+                how = f"column '{column}'" if column else "pattern"
+                messages.append(f"{name}: {how} found no numeric value")
+            continue
+
+        occurrence = str(rule.get("occurrence", "first")).lower()
+        if occurrence == "last":
+            value = values[-1]
+        elif occurrence == "min":
+            value = min(values)
+        elif occurrence == "max":
+            value = max(values)
+        else:
+            value = values[0]
+
+        measured[name] = value
+
+        lo = rule.get("min")
+        hi = rule.get("max")
+        if lo is not None and value < float(lo):
+            ok = False
+            messages.append(f"{name}: {value:g} < min {float(lo):g}")
+        elif hi is not None and value > float(hi):
+            ok = False
+            messages.append(f"{name}: {value:g} > max {float(hi):g}")
+        else:
+            bound = []
+            if lo is not None:
+                bound.append(f"min {float(lo):g}")
+            if hi is not None:
+                bound.append(f"max {float(hi):g}")
+            messages.append(f"{name}: {value:g} OK" + (f" ({', '.join(bound)})" if bound else ""))
+
+    return ok, messages, measured
+
+
 def run_check(
     check: Dict,
     template_vars: Dict[str, str],
     default_env: Dict[str, str],
     dry_run: bool,
-) -> Tuple[bool, float, int]:
+) -> Tuple[bool, float, int, Dict[str, float], List[str]]:
     check_id = check["id"]
     command, use_shell = render_command(check["command"], template_vars)
 
@@ -126,25 +295,65 @@ def run_check(
 
     if dry_run:
         print("Dry-run enabled; command not executed.")
-        return True, 0.0, 0
+        return True, 0.0, 0, {}, []
+
+    has_expect = bool(check.get("expect"))
 
     start = time.time()
     try:
-        completed = subprocess.run(
-            command,
-            shell=use_shell,
-            cwd=run_cwd,
-            env=env,
-            timeout=timeout,
-            check=False,
-        )
+        if has_expect:
+            # Output must be captured to evaluate the rules, but it is still
+            # echoed so a long-running check is not silent for its duration.
+            completed = subprocess.run(
+                command,
+                shell=use_shell,
+                cwd=run_cwd,
+                env=env,
+                timeout=timeout,
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                errors="replace",
+            )
+            output = completed.stdout or ""
+            if output:
+                print(output, end="" if output.endswith("\n") else "\n")
+        else:
+            completed = subprocess.run(
+                command,
+                shell=use_shell,
+                cwd=run_cwd,
+                env=env,
+                timeout=timeout,
+                check=False,
+            )
+            output = ""
+
         elapsed = time.time() - start
-        ok = completed.returncode == 0
-        return ok, elapsed, int(completed.returncode)
+        rc = int(completed.returncode)
+        ok = rc == 0
+
+        measured: Dict[str, float] = {}
+        messages: List[str] = []
+        if has_expect:
+            # Thresholds are only meaningful for a check that ran to
+            # completion; a crashed binary has no trustworthy output to parse.
+            if ok:
+                exp_ok, messages, measured = evaluate_expectations(check, output)
+                for msg in messages:
+                    print(f"  expect {msg}")
+                if not exp_ok:
+                    ok = False
+                    print(f"  expectations not met for {check_id}")
+            else:
+                messages = [f"skipped: command exited {rc}"]
+
+        return ok, elapsed, rc, measured, messages
     except subprocess.TimeoutExpired:
         elapsed = time.time() - start
         print(f"Timed out after {elapsed:.1f}s")
-        return False, elapsed, 124
+        return False, elapsed, 124, {}, ["timeout"]
 
 
 def run_build_step(config: Dict, template_vars: Dict[str, str], dry_run: bool) -> bool:
@@ -233,13 +442,13 @@ def load_nodes(nodefile: str) -> List[str]:
 def write_dashboard_json(
     output_path: Path,
     pbs_jobid: str,
-    results: List[Tuple[str, bool, float, int]],
+    results: List[Tuple[str, bool, float, int, Dict[str, float], List[str]]],
     dry_run: bool,
     nodes: List[str],
     append: bool,
 ) -> None:
-    passed_check_names = [check_id for check_id, ok, _, _ in results if ok]
-    failed_check_names = [check_id for check_id, ok, _, _ in results if not ok]
+    passed_check_names = [r[0] for r in results if r[1]]
+    failed_check_names = [r[0] for r in results if not r[1]]
     n_fail = len(failed_check_names)
     status = "healthy"
     if n_fail > 0:
@@ -247,15 +456,21 @@ def write_dashboard_json(
     elif dry_run:
         status = "warning"
 
-    checks_payload = [
-        {
+    checks_payload = []
+    for check_id, ok, elapsed, rc, measured, messages in results:
+        entry = {
             "id": check_id,
             "status": "healthy" if ok else "unhealthy",
             "return_code": rc,
             "elapsed_seconds": round(elapsed, 4),
         }
-        for check_id, ok, elapsed, rc in results
-    ]
+        # Measured values are the point of thresholds: they let the dashboard
+        # trend a metric over time rather than only recording pass/fail.
+        if measured:
+            entry["measurements"] = {k: round(v, 4) for k, v in measured.items()}
+        if messages:
+            entry["expect_messages"] = messages
+        checks_payload.append(entry)
 
     payload = {"nodes": []}
 
@@ -460,17 +675,17 @@ def main() -> int:
         print("No checks selected.")
         return 0
 
-    results: List[Tuple[str, bool, float, int]] = []
+    results: List[Tuple[str, bool, float, int, Dict[str, float], List[str]]] = []
 
     for check in selected:
-        ok, elapsed, rc = run_check(
+        ok, elapsed, rc, measured, messages = run_check(
             check,
             template_vars=template_vars,
             default_env=default_env,
             dry_run=args.dry_run,
         )
         check_id = str(check["id"])
-        results.append((check_id, ok, elapsed, rc))
+        results.append((check_id, ok, elapsed, rc, measured, messages))
 
         status = "PASS" if ok else "FAIL"
         print(f"Result {check_id}: {status} (rc={rc}, {elapsed:.2f}s)")
@@ -481,9 +696,15 @@ def main() -> int:
     failed = [r for r in results if not r[1]]
 
     print("\n=== Summary ===")
-    for check_id, ok, elapsed, rc in results:
+    for check_id, ok, elapsed, rc, measured, messages in results:
         status = "PASS" if ok else "FAIL"
-        print(f"{status:4} {check_id:32} rc={rc:3d} elapsed={elapsed:.2f}s")
+        extra = ""
+        if measured:
+            extra = "  " + " ".join(f"{k}={v:g}" for k, v in measured.items())
+        print(f"{status:4} {check_id:32} rc={rc:3d} elapsed={elapsed:.2f}s{extra}")
+        if not ok:
+            for msg in messages:
+                print(f"       {msg}")
 
     if args.dashboard_json or args.pbs_jobid.strip():
         nodes = load_nodes(args.nodefile.strip())
